@@ -57,7 +57,7 @@ const Navbar = ({ userProfile }: { userProfile: any }) => {
 
   const checkAdminRole = async (userId: string) => {
     const { data } = await supabase
-      .from("user_roles")
+      .from("admins")
       .select("role")
       .eq("user_id", userId)
       .eq("role", "admin")
@@ -130,7 +130,7 @@ const Navbar = ({ userProfile }: { userProfile: any }) => {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-smooth">
-            <BookOpen className="h-8 w-8 text-primary" />
+            <img src="/logo_1.png" alt="Book" className="h-12 w-12" />
             <span className="text-2xl font-heading font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
               DonoBook
             </span>

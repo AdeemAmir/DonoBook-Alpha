@@ -15,7 +15,7 @@ import Assistant from "./pages/Assistant";
 import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
 import SearchMessages from "./pages/SearchMessages";
-// import EditProfile from "./pages/EditProfile";
+import EditProfile from "./pages/EditProfile";
 
 const queryClient = new QueryClient();
 

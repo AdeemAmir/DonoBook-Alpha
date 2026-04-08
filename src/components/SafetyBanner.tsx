@@ -7,7 +7,7 @@ const SafetyBanner = () => {
   if (!isVisible) return null;
 
   return (
-    <div className="bg-amber-50 border-b border-amber-100 p-4 transition-all animate-in fade-in slide-in-from-top-2">
+    <div className="bg-amber-50 border-b border-amber-100 p-4 transition-all animate-in fade-in slide-in-from-top-2 rounded-lg">
       <div className="max-w-4xl mx-auto flex items-start gap-4">
         <div className="bg-amber-100 p-2 rounded-full shrink-0">
           <ShieldAlert className="size-5 text-amber-700" />
@@ -24,7 +24,7 @@ const SafetyBanner = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex gap-2">
               <MapPin className="size-4 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800 leading-tight">

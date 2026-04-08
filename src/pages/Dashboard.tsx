@@ -63,7 +63,7 @@ const Dashboard = () => {
         .from("profiles")
         .select(`
         *,
-        user_roles (role),
+        admins (role),
         welfare_verifications (status)
       `)
         .eq("id", user.id)
@@ -75,9 +75,9 @@ const Dashboard = () => {
       const profileWithRole = {
         ...data,
         // Check if it's an array or an object
-        role: Array.isArray(data.user_roles)
-          ? data.user_roles[0]?.role
-          : data.user_roles?.role || 'user',
+        role: Array.isArray(data.admins)
+          ? data.admins[0]?.role
+          : data.admins?.role || 'user',
       };
 
       setUserProfile(profileWithRole);

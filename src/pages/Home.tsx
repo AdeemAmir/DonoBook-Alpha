@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
-import AlphaNotice from "@/components/AlphaNotice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -294,7 +293,6 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-primary-light/20 to-background">
       <Navbar />
-      <AlphaNotice />
 
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-16 text-center">
@@ -302,7 +300,6 @@ const Home = () => {
           <motion.h1 variants={fadeUp} transition={{ duration: 0.6 }} className="text-5xl md:text-6xl font-heading font-bold bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
             Share & Exchange
           </motion.h1>
-      
           <motion.p variants={fadeUp} transition={{ duration: 0.6, delay: 0.1 }} className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
             Beyond just books—our platform is a complete ecosystem for school essentials.
             Whether it's a sturdy backpack, a complete stationary set, or a much-needed textbook,
@@ -548,7 +545,7 @@ const Home = () => {
               {!hasMore && filteredListings.length > 0 && (
                 <div className="pt-8">
                   <p className="text-muted-foreground text-sm bg-muted/30 py-2 px-4 rounded-full inline-block">
-                    You've seen everything we have for now!
+                    You've seen everything we have for now! 📚
                   </p>
                 </div>
               )}

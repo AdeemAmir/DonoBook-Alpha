@@ -47,7 +47,7 @@ const AdminPanel = () => {
 
       // Check if user has admin role
       const { data: roleData, error: roleError } = await supabase
-        .from("user_roles")
+        .from("admins")
         .select("role")
         .eq("user_id", user.id)
         .eq("role", "admin")

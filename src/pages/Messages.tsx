@@ -600,7 +600,9 @@ const Messages = () => {
             </form>
           </CardContent>
         </Card>
-        <div><SafetyBanner /></div>
+        <div className="max-w-4xl mx-auto mt-4">
+          <SafetyBanner />
+        </div>
 
         {/* Delete confirmation */}
         <AlertDialog open={!!deletingMessageId} onOpenChange={() => setDeletingMessageId(null)}>

@@ -16,6 +16,7 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
+import ItemLocationMap from "@/components/ItemLocationMap"
 
 type Book = Database['public']['Tables']['books']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -142,9 +143,8 @@ const BookDetails = () => {
                           src={url}
                           alt={`${book.title} - image ${index + 1}`}
                           onClick={() => { setLightboxIndex(index); setLightboxOpen(true); }}
-                          className={`w-full h-96 object-cover rounded-lg transition-all cursor-zoom-in ${
-                            book.status !== "available" ? "grayscale opacity-60" : ""
-                          }`}
+                          className={`w-full h-96 object-cover rounded-lg transition-all cursor-zoom-in ${book.status !== "available" ? "grayscale opacity-60" : ""
+                            }`}
                         />
                       </div>
                     </CarouselItem>
@@ -211,11 +211,10 @@ const BookDetails = () => {
                   <Button
                     onClick={handleContact}
                     disabled={book.status !== "available"}
-                    className={`w-full gap-2 text-lg py-6 ${
-                      book.status === "available"
-                        ? "bg-primary hover:bg-primary-hover"
-                        : "bg-muted text-muted-foreground"
-                    }`}
+                    className={`w-full gap-2 text-lg py-6 ${book.status === "available"
+                      ? "bg-primary hover:bg-primary-hover"
+                      : "bg-muted text-muted-foreground"
+                      }`}
                   >
                     <MessageSquare className="h-5 w-5" />
                     {book.status === "available" ? "Contact Owner" : "Currently Unavailable"}
@@ -236,6 +235,37 @@ const BookDetails = () => {
             </Card>
           </div>
         </div>
+        {owner?.address && !isOwner && (
+          <div className="mt-8 max-w-4xl mx-auto">
+            <Card className="shadow-card overflow-hidden">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  Map View
+                </CardTitle>
+                {owner.user_type === "user" && (
+                  <CardDescription>
+                    Exact address is kept private. Arrange meetup details via chat.
+                  </CardDescription>
+                )}
+              </CardHeader>
+              <CardContent className="p-0">
+                {/* Taller map with no side padding */}
+                <div className="h-72 w-full">
+                  <ItemLocationMap
+                    address={owner.address}
+                    ownerName={owner.name}
+                  />
+                </div>
+                {/* Footer strip */}
+                <div className="px-4 py-3 bg-muted/40 border-t flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <p className="text-xs text-muted-foreground">{owner.address}, Karachi</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* ── LIGHTBOX ── */}

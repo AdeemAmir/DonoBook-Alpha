@@ -17,6 +17,7 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
+import ItemLocationMap from "@/components/ItemLocationMap"
 
 export type Item = Database['public']['Tables']['items']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -282,7 +283,39 @@ const ItemDetails = () => {
             </Card>
           </div>
         </div>
+        {owner?.address && !isOwner && (
+          <div className="mt-8 max-w-4xl mx-auto">
+            <Card className="shadow-card overflow-hidden">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  Map View
+                </CardTitle>
+                {owner.user_type === "user" && (
+                  <CardDescription>
+                    Exact address is kept private. Arrange meetup details via chat.
+                  </CardDescription>
+                )}
+              </CardHeader>
+              <CardContent className="p-0">
+                {/* Taller map with no side padding */}
+                <div className="h-72 w-full">
+                  <ItemLocationMap
+                    address={owner.address}
+                    ownerName={owner.name}
+                  />
+                </div>
+                {/* Footer strip */}
+                <div className="px-4 py-3 bg-muted/40 border-t flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <p className="text-xs text-muted-foreground">{owner.address}, Karachi</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
+      
       {/* ── LIGHTBOX ── */}
       {lightboxOpen && (
         <div
