@@ -440,7 +440,7 @@ const Home = () => {
           </section>
 
           {/* Features */}
-          <section className="container mx-auto px-4 py-16">
+          <section className="container mx-auto px-4 py-16 text-center">
                       <div className="relative container text-center">
           <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4">
@@ -461,8 +461,12 @@ const Home = () => {
                 <motion.div key={f.title} variants={fadeUp} transition={{ duration: 0.5 }}>
                   <Card className="h-full hover:shadow-soft transition-smooth border-border hover:-translate-y-1">
                     <CardHeader>
-                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center mb-2 ${f.color}`}>
-                        <f.icon className="h-5 w-5" />
+                      <div className="flex justify-center mb-4">
+                        <div
+                          className={`h-14 w-14 rounded-xl flex items-center justify-center ${f.color}`}
+                        >
+                          <f.icon className="h-7 w-7" strokeWidth={2} />
+                        </div>
                       </div>
                       <CardTitle className="text-base font-semibold">{f.title}</CardTitle>
                       <CardDescription className="text-sm leading-relaxed">{f.desc}</CardDescription>
@@ -519,7 +523,7 @@ const Home = () => {
             transition={{ duration: 0.4 }}
           >
             <div>
-              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">Welcome back 👋</h2>
+              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">Welcome back, user</h2>
               <p className="text-muted-foreground text-sm">
                 {recommendedCategory
                   ? `How about a ${getCategoryLabel(recommendedCategory)} for today?`
