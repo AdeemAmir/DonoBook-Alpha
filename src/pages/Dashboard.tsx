@@ -350,8 +350,15 @@ const Dashboard = () => {
   const getCategoryLabel = (category: string) => {
     const labels: Record<string, string> = {
       textbook: "Textbook",
+      story_book: "Story Book",
       reading_book: "Reading Book",
       other_book: "Other Book",
+      bag: "Bag",
+      water_bottle: "Water Bottle",
+      pencil_box: "Pencil Box",
+      lunchbox: "Lunchbox",
+      stationery: "Stationery",
+      other: "Other",
     };
     return labels[category] || category;
   };
@@ -475,7 +482,7 @@ const Dashboard = () => {
                       </CardHeader>
                       <CardContent>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/book/${book.id}`)} className="flex-1">
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/book/${(book as any).slug || book.id}`)} className="flex-1">
                             View
                           </Button>
                           <Button variant="outline" size="sm" onClick={() => openEdit(book, 'book')}>
@@ -518,7 +525,7 @@ const Dashboard = () => {
                       </CardHeader>
                       <CardContent>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/item/${item.id}`)} className="flex-1">
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/item/${(item as any).slug || item.id}`)} className="flex-1">
                             View
                           </Button>
                           <Button variant="outline" size="sm" onClick={() => openEdit(item, 'item')}>

@@ -59,7 +59,7 @@ const Assistant = () => {
         const welcomeMessage: Message = {
           role: "assistant",
           content:
-            "Hi! I'm the BookShare Assistant. I can help you with:\n• How to use the app\n• Finding or requesting books\n• Donating or exchanging textbooks\n\nWhat would you like to know?",
+            "السلام علیکم! I'm the **DonoBook Assistant** — your guide for sharing school essentials across Karachi.\n\nI can help you with:\n• 📚 Finding or requesting books by grade/subject\n• 🎁 Donating or exchanging books and items\n• 🤖 Using the AI book scanner\n• 💬 How messaging and handovers work\n• ❓ Any questions about DonoBook\n\nWhat would you like to know?",
         };
 
         setMessages([welcomeMessage]);
@@ -99,7 +99,7 @@ const Assistant = () => {
     const welcomeMessage: Message = {
       role: "assistant",
       content:
-        "Hi! I'm the BookShare Assistant. I can help you with:\n• How to use the app\n• Finding or requesting books\n• Donating or exchanging textbooks\n\nWhat would you like to know?",
+        "Hi! I'm DonoBook Assistant. I can help you with:\n• How to use the app\n• Finding or requesting books\n• Donating or exchanging textbooks\n\nWhat would you like to know?",
       timestamp: new Date().toISOString(),
     };
 
@@ -120,6 +120,11 @@ const Assistant = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading || !userId) return;
+    const trimmedInput = input.trim();
+    if (trimmedInput.length > 2000) {
+      toast({ title: "Message too long", description: "Please keep messages under 2000 characters.", variant: "destructive" });
+      return;
+    }
 
     const userMessage: Message = {
       role: "user",
@@ -214,7 +219,7 @@ const Assistant = () => {
                 </div>
                 <div>
                   <CardTitle className="font-heading text-foreground">
-                    BookShare Assistant
+                    DonoBook Assistant
                   </CardTitle>
                   <CardDescription className="text-muted-foreground">
                     AI Guide for Transactions & Safety

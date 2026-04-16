@@ -41,51 +41,72 @@ export type Database = {
     Tables: {
       books: {
         Row: {
+          author: string | null
           category: Database["public"]["Enums"]["book_category"]
           condition: Database["public"]["Enums"]["book_condition"]
           created_at: string
           description: string | null
+          edition: string | null
           grade: string | null
           handover_confirmed: boolean | null
           id: string
           image_url: string | null
           is_available: boolean
+          isbn: string | null
+          language: string | null
           owner_id: string
+          page_count: number | null
+          publisher: string | null
           receiver_id: string | null
+          slug: string | null
           status: string | null
           title: string
           type: Database["public"]["Enums"]["book_type"]
           updated_at: string
         }
         Insert: {
+          author?: string | null
           category: Database["public"]["Enums"]["book_category"]
           condition: Database["public"]["Enums"]["book_condition"]
           created_at?: string
           description?: string | null
+          edition?: string | null
           grade?: string | null
           handover_confirmed?: boolean | null
           id?: string
           image_url?: string | null
           is_available?: boolean
+          isbn?: string | null
+          language?: string | null
           owner_id: string
+          page_count?: number | null
+          publisher?: string | null
           receiver_id?: string | null
+          slug?: string | null
           status?: string | null
           title: string
           type: Database["public"]["Enums"]["book_type"]
           updated_at?: string
         }
         Update: {
+          author?: string | null
           category?: Database["public"]["Enums"]["book_category"]
           condition?: Database["public"]["Enums"]["book_condition"]
           created_at?: string
           description?: string | null
+          edition?: string | null
           grade?: string | null
           handover_confirmed?: boolean | null
           id?: string
           image_url?: string | null
           is_available?: boolean
+          isbn?: string | null
+          language?: string | null
           owner_id?: string
+          page_count?: number | null
+          publisher?: string | null
           receiver_id?: string | null
+          slug?: string | null
           status?: string | null
           title?: string
           type?: Database["public"]["Enums"]["book_type"]
@@ -175,7 +196,10 @@ export type Database = {
       }
       items: {
         Row: {
+          age_range: string | null
+          brand: string | null
           category: Database["public"]["Enums"]["item_category"]
+          color: string | null
           condition: Database["public"]["Enums"]["book_condition"]
           created_at: string
           description: string | null
@@ -183,15 +207,21 @@ export type Database = {
           id: string
           image_url: string | null
           is_available: boolean
+          material: string | null
           name: string
           owner_id: string
           receiver_id: string | null
+          size: string | null
+          slug: string | null
           status: string | null
           type: Database["public"]["Enums"]["item_type"]
           updated_at: string
         }
         Insert: {
+          age_range?: string | null
+          brand?: string | null
           category: Database["public"]["Enums"]["item_category"]
+          color?: string | null
           condition: Database["public"]["Enums"]["book_condition"]
           created_at?: string
           description?: string | null
@@ -199,15 +229,21 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_available?: boolean
+          material?: string | null
           name: string
           owner_id: string
           receiver_id?: string | null
+          size?: string | null
+          slug?: string | null
           status?: string | null
           type: Database["public"]["Enums"]["item_type"]
           updated_at?: string
         }
         Update: {
+          age_range?: string | null
+          brand?: string | null
           category?: Database["public"]["Enums"]["item_category"]
+          color?: string | null
           condition?: Database["public"]["Enums"]["book_condition"]
           created_at?: string
           description?: string | null
@@ -215,9 +251,12 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_available?: boolean
+          material?: string | null
           name?: string
           owner_id?: string
           receiver_id?: string | null
+          size?: string | null
+          slug?: string | null
           status?: string | null
           type?: Database["public"]["Enums"]["item_type"]
           updated_at?: string
@@ -562,8 +601,8 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
-      book_category: "textbook" | "story_book"
-      book_condition: "new" | "used"
+      book_category: "textbook" | "story_book" | "other_book"
+      book_condition: "new" | "like_new" | "good" | "fair" | "worn" | "used"
       book_type: "donate" | "exchange" | "sell"
       item_category:
         | "bag"

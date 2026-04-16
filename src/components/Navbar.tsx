@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-const Navbar = ({ userProfile }: { userProfile: any }) => {
+const Navbar = ({ userProfile }: { userProfile?: any }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [user, setUser] = useState<SupabaseUser | null>(null);

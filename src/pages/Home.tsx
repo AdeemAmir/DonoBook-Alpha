@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Search, Backpack, BookOpen, BookOpenText, Gift, RefreshCw,
   Package, PencilRuler, ShoppingBag, Loader2, BadgeCheck,
-  MapPin, X, SlidersHorizontal
+  MapPin, X, SlidersHorizontal, ArrowRight, Sparkles,
+  Users, BookMarked, Heart, Star, Shield, Zap
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Database } from "@/integrations/supabase/types";
@@ -21,6 +22,7 @@ type Item = Database['public']['Tables']['items']['Row'];
 
 type ListingItem = {
   id: string;
+  slug?: string | null;
   name: string;
   type: string;
   condition: string;
@@ -47,7 +49,7 @@ const fadeUp = {
 
 const staggerContainer = {
   hidden: {},
-  visible: { transition: { staggerChildren: 0.08 } },
+  visible: { transition: { staggerChildren: 0.07 } },
 };
 
 const CATEGORY_FILTERS = [
@@ -68,6 +70,39 @@ const TYPE_FILTERS = [
   { value: "exchange", label: "Exchange", icon: RefreshCw },
 ];
 
+const FEATURES = [
+  {
+    icon: Gift,
+    title: "Free to Use",
+    desc: "No fees. Donate or exchange school essentials completely free.",
+    color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20",
+  },
+  {
+    icon: Shield,
+    title: "Verified Donors",
+    desc: "Welfare organizations are verified for safe, trusted exchanges.",
+    color: "text-primary bg-primary/10",
+  },
+  {
+    icon: Sparkles,
+    title: "AI-Powered",
+    desc: "Scan any book cover and our AI instantly fills in all details.",
+    color: "text-violet-600 bg-violet-50 dark:bg-violet-900/20",
+  },
+  {
+    icon: Users,
+    title: "Community First",
+    desc: "Built for students to help each other succeed.",
+    color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20",
+  },
+];
+
+const STATS = [
+  { value: "500+", label: "Books Shared" },
+  { value: "200+", label: "Students Helped" },
+  { value: "50+", label: "Active Donors" },
+];
+
 const Home = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -80,6 +115,7 @@ const Home = () => {
   const [hasMoreItems, setHasMoreItems] = useState(true);
   const [booksOffset, setBooksOffset] = useState(0);
   const [itemsOffset, setItemsOffset] = useState(0);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const listingsSectionRef = useRef<HTMLElement>(null);
@@ -89,16 +125,39 @@ const Home = () => {
   const [locationQuery, setLocationQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => { fetchInitial(); }, []);
+  // Recommendation state — track recently viewed categories
+  const [recommendedCategory, setRecommendedCategory] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check auth
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(!!session);
+    });
+
+    fetchInitial();
+
+    // Load recommended category from localStorage
+    const lastViewed = localStorage.getItem("donobook_last_category");
+    if (lastViewed) setRecommendedCategory(lastViewed);
+  }, []);
 
   const fetchInitial = async () => {
     try {
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
       const itemSelect = `*, owner:profiles!items_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
 
+      // If there's a recommended category, prioritize it
+      const lastCategory = localStorage.getItem("donobook_last_category");
+
       const [booksResult, itemsResult] = await Promise.all([
-        supabase.from("books").select(bookSelect).order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1).eq('is_available', true),
-        supabase.from("items").select(itemSelect).order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1).eq('is_available', true),
+        supabase.from("books").select(bookSelect)
+          .order("created_at", { ascending: false })
+          .range(0, PAGE_SIZE - 1)
+          .eq('is_available', true),
+        supabase.from("items").select(itemSelect)
+          .order("created_at", { ascending: false })
+          .range(0, PAGE_SIZE - 1)
+          .eq('is_available', true),
       ]);
 
       if (booksResult.error) throw booksResult.error;
@@ -131,11 +190,17 @@ const Home = () => {
       let newItems: any[] = [];
 
       if (hasMoreBooks) {
-        const { data } = await supabase.from("books").select(bookSelect).order("created_at", { ascending: false }).range(booksOffset, booksOffset + PAGE_SIZE - 1).eq('is_available', true);
+        const { data } = await supabase.from("books").select(bookSelect)
+          .order("created_at", { ascending: false })
+          .range(booksOffset, booksOffset + PAGE_SIZE - 1)
+          .eq('is_available', true);
         newBooks = data || [];
       }
       if (hasMoreItems) {
-        const { data } = await supabase.from("items").select(itemSelect).order("created_at", { ascending: false }).range(itemsOffset, itemsOffset + PAGE_SIZE - 1).eq('is_available', true);
+        const { data } = await supabase.from("items").select(itemSelect)
+          .order("created_at", { ascending: false })
+          .range(itemsOffset, itemsOffset + PAGE_SIZE - 1)
+          .eq('is_available', true);
         newItems = data || [];
       }
 
@@ -165,6 +230,8 @@ const Home = () => {
     setActiveCategories(prev =>
       prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     );
+    // Save to recommendation storage
+    localStorage.setItem("donobook_last_category", value);
   };
 
   const toggleType = (value: string) => {
@@ -184,20 +251,39 @@ const Home = () => {
 
   const getCombinedListings = (): ListingItem[] => {
     const bookListings: ListingItem[] = books.map(book => ({
-      id: book.id, name: book.title, type: book.type, condition: book.condition,
+      id: book.id, slug: (book as any).slug, name: book.title, type: book.type, condition: book.condition,
       description: book.description, image_url: book.image_url, created_at: book.created_at,
       itemType: 'book', grade: book.grade, category: book.category,
       owner: (book as any).owner
     }));
     const itemListings: ListingItem[] = items.map(item => ({
-      id: item.id, name: item.name, type: item.type, condition: item.condition,
+      id: item.id, slug: (item as any).slug, name: item.name, type: item.type, condition: item.condition,
       description: item.description, image_url: item.image_url, created_at: item.created_at,
       itemType: 'item', category: item.category,
       owner: (item as any).owner
     }));
-    return [...bookListings, ...itemListings].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+
+    let combined = [...bookListings, ...itemListings];
+
+    // Sort: recommended category first, then by date
+    if (recommendedCategory) {
+      combined = [
+        ...combined.filter(i =>
+          (recommendedCategory === "books" && i.itemType === "book") ||
+          (recommendedCategory === "items" && i.itemType === "item") ||
+          i.category === recommendedCategory
+        ),
+        ...combined.filter(i =>
+          !(recommendedCategory === "books" && i.itemType === "book") &&
+          !(recommendedCategory === "items" && i.itemType === "item") &&
+          i.category !== recommendedCategory
+        ),
+      ];
+    } else {
+      combined = combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    return combined;
   };
 
   const getFilteredListings = () => {
@@ -207,7 +293,7 @@ const Home = () => {
         return activeCategories.some(cat => {
           if (cat === "books") return item.itemType === 'book';
           if (cat === "items") return item.itemType === 'item';
-          if (cat === "textbook" || cat === "story_book" || cat === "other_book") return item.itemType === 'book' && item.category === cat;
+          if (["textbook", "story_book", "other_book"].includes(cat)) return item.itemType === 'book' && item.category === cat;
           return item.itemType === 'item' && item.category === cat;
         });
       });
@@ -217,9 +303,7 @@ const Home = () => {
     }
     if (locationQuery.trim()) {
       const loc = locationQuery.toLowerCase();
-      listings = listings.filter(item =>
-        item.owner?.address?.toLowerCase().includes(loc)
-      );
+      listings = listings.filter(item => item.owner?.address?.toLowerCase().includes(loc));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -230,19 +314,13 @@ const Home = () => {
 
   const filteredListings = getFilteredListings();
 
-  // --- Search Logic Integration ---
   const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       if (!searchQuery.trim()) return;
-
       if (filteredListings.length > 0) {
         listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
-        toast({
-          title: "No items found",
-          description: `We couldn't find any listings matching "${searchQuery}".`,
-          variant: "destructive",
-        });
+        toast({ title: "No results", description: `Nothing found for "${searchQuery}".`, variant: "destructive" });
       }
     }
   };
@@ -257,8 +335,8 @@ const Home = () => {
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case "donate": return <Gift className="h-4 w-4" />;
-      case "exchange": return <RefreshCw className="h-4 w-4" />;
+      case "donate": return <Gift className="h-3.5 w-3.5" />;
+      case "exchange": return <RefreshCw className="h-3.5 w-3.5" />;
       default: return null;
     }
   };
@@ -267,13 +345,16 @@ const Home = () => {
     const labels: Record<string, string> = {
       bag: "Bag", water_bottle: "Water Bottle", pencil_box: "Pencil Box",
       lunchbox: "Lunchbox", stationery: "Stationery", other: "Other",
-      textbook: "Textbook", story_book: "Reading Book", other_book: "Other Book"
+      textbook: "Textbook", story_book: "Story Book", other_book: "Other Book", reading_book: "Reading Book",
     };
     return labels[category] || category;
   };
 
   const handleItemClick = (item: ListingItem) => {
-    navigate(item.itemType === 'book' ? `/book/${item.id}` : `/item/${item.id}`);
+    const urlParam = item.slug || item.id;
+    navigate(item.itemType === 'book' ? `/book/${urlParam}` : `/item/${urlParam}`);
+    // Save preference for recommendations
+    localStorage.setItem("donobook_last_category", item.category);
   };
 
   const getThumbnail = (imageUrl: string | null) => {
@@ -282,7 +363,7 @@ const Home = () => {
       try {
         const parsed = JSON.parse(imageUrl);
         return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : "/placeholder.svg";
-      } catch (e) { return imageUrl; }
+      } catch { return imageUrl; }
     }
     return imageUrl;
   };
@@ -291,77 +372,223 @@ const Home = () => {
   const filterKey = [...activeCategories, ...activeTypes, locationQuery, searchQuery].join("|");
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-primary-light/20 to-background">
+    <div className="min-h-screen bg-background">
       <Navbar />
 
-      {/* Hero Section */}
-      <section className="container mx-auto px-4 py-16 text-center">
-        <motion.div className="max-w-3xl mx-auto space-y-6" initial="hidden" animate="visible" variants={staggerContainer}>
-          <motion.h1 variants={fadeUp} transition={{ duration: 0.6 }} className="text-5xl md:text-6xl font-heading font-bold bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
-            Share & Exchange
-          </motion.h1>
-          <motion.p variants={fadeUp} transition={{ duration: 0.6, delay: 0.1 }} className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-            Beyond just books—our platform is a complete ecosystem for school essentials.
-            Whether it's a sturdy backpack, a complete stationary set, or a much-needed textbook,
-            we connect students to ensure no resource goes to waste.
-          </motion.p>
-          <motion.div variants={fadeUp} transition={{ duration: 0.5, delay: 0.2 }} className="relative max-w-2xl mx-auto">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground h-5 w-5" />
+      {/* ══════════════════════════════════════════
+          GUEST LANDING — shown only when not logged in
+          ══════════════════════════════════════════ */}
+      {isLoggedIn === false && (
+        <>
+          {/* Hero */}
+          <section className="relative overflow-hidden">
+            <div className="absolute inset-0 gradient-hero opacity-60" />
+            <div className="relative container mx-auto px-4 py-20 sm:py-15 text-center">
+              <motion.div
+                className="max-w-5xl mx-auto space-y-6"
+                initial="hidden"
+                animate="visible"
+                variants={staggerContainer}
+              >
+                <motion.h1
+                  variants={fadeUp}
+                  transition={{ duration: 0.6 }}
+                  className="text-4xl sm:text-6xl font-heading font-bold leading-tight"
+                >
+                  <span className="gradient-text">Share & Exchange</span>
+                  <br />Build Futures.
+                </motion.h1>
+                <motion.p
+                  variants={fadeUp}
+                  transition={{ duration: 0.6, delay: 0.1 }}
+                  className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
+                >
+                  Beyond just transactions - Donobook is an ecosystem for school essentials. <br />
+                  Be it a sturdy backpack, or much-needed textbooks students rely on, <br />we connect students so valuable resources never go to waste. <br />
+                  Give what you can. Feed the thirst for knowledge.
+                </motion.p>
+                <motion.div
+                  variants={fadeUp}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                  className="flex flex-col sm:flex-row gap-3 justify-center pt-2"
+                >
+                  <Button size="lg" onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover shadow-glow gap-2 h-12 px-8 text-base font-semibold btn-glow">
+                    Get Started Free <ArrowRight className="h-4 w-4" />
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })} className="h-12 px-8 text-base">
+                    Browse Listings
+                  </Button>
+                </motion.div>
+                
+              </motion.div>
+            </div>
+            
+          </section>
+
+          {/* Stats */}
+          <section className="border-y border-border bg-card/50">
+            <div className="container mx-auto px-4 py-8">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16">
+                {STATS.map((s) => (
+                  <div key={s.label} className="text-center">
+                    <p className="text-3xl font-heading font-bold gradient-text">{s.value}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Features */}
+          <section className="container mx-auto px-4 py-16">
+                      <div className="relative container text-center">
+          <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4">
+                    <Sparkles className="h-3.5 w-3.5" /> Built for a better Future
+                  </span>
+          </motion.div>
+          </div>
+
+            <div className="text-center mb-10">
+              <h2 className="text-2xl sm:text-3xl font-heading font-bold mb-3">Why DonoBook?</h2>
+              <p className="text-muted-foreground max-w-xl mx-auto">Everything you need to share and find school essentials — in one place.</p>
+            </div>
+            <motion.div
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+              initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer}
+            >
+              {FEATURES.map((f) => (
+                <motion.div key={f.title} variants={fadeUp} transition={{ duration: 0.5 }}>
+                  <Card className="h-full hover:shadow-soft transition-smooth border-border hover:-translate-y-1">
+                    <CardHeader>
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center mb-2 ${f.color}`}>
+                        <f.icon className="h-5 w-5" />
+                      </div>
+                      <CardTitle className="text-base font-semibold">{f.title}</CardTitle>
+                      <CardDescription className="text-sm leading-relaxed">{f.desc}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                </motion.div>
+              ))}
+            </motion.div>
+          </section>
+
+          {/* Categories overview */}
+          <section className="container mx-auto px-4 pb-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-heading font-bold mb-2">What's Available</h2>
+              <p className="text-muted-foreground text-sm">Browse by category to find exactly what you need</p>
+            </div>
+            <motion.div
+              className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+              initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer}
+            >
+              {[
+                { icon: BookOpenText, title: "Textbooks", desc: "Class 1-12 curriculum", color: "text-primary" },
+                { icon: Backpack, title: "School Bags", desc: "Backpacks & bags", color: "text-secondary" },
+                { icon: PencilRuler, title: "Stationery", desc: "Pencils, pens & sets", color: "text-accent" },
+                { icon: ShoppingBag, title: "Lunchboxes", desc: "Tiffins & bottles", color: "text-primary" },
+              ].map((cat) => (
+                <motion.div key={cat.title} variants={fadeUp} transition={{ duration: 0.4 }}>
+                  <Card
+                    className="hover:shadow-soft hover:-translate-y-1 transition-smooth cursor-pointer border-border"
+                    onClick={() => listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                  >
+                    <CardHeader className="text-center pb-4 pt-5">
+                      <cat.icon className={`h-8 w-8 mx-auto mb-2 ${cat.color}`} />
+                      <CardTitle className="text-sm font-semibold">{cat.title}</CardTitle>
+                      <CardDescription className="text-xs">{cat.desc}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                </motion.div>
+              ))}
+            </motion.div>
+          </section>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════
+          LOGGED-IN HERO — compact, product-first
+          ══════════════════════════════════════════ */}
+      {isLoggedIn === true && (
+        <section className="container mx-auto px-4 py-8">
+          <motion.div
+            className="rounded-2xl bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 border border-primary/10 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <div>
+              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">Welcome back 👋</h2>
+              <p className="text-muted-foreground text-sm">
+                {recommendedCategory
+                  ? `How about a ${getCategoryLabel(recommendedCategory)} for today?`
+                  : "Browse the latest donations and exchanges from your community"}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow">
+                <Gift className="h-4 w-4" /> Donate Item
+              </Button>
+              <Button variant="outline" onClick={() => navigate("/assistant")} className="gap-2">
+                <Sparkles className="h-4 w-4" /> AI Help
+              </Button>
+            </div>
+          </motion.div>
+        </section>
+      )}
+
+      {/* ══════════════════════════════════════════
+          SEARCH BAR (always visible)
+          ══════════════════════════════════════════ */}
+      {isLoggedIn !== null && (
+        <div className="container mx-auto px-4 pb-4">
+          <div className="relative max-w-2xl mx-auto">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5" />
             <Input
               type="text"
-              placeholder="Search for books or items and press Enter..."
+              placeholder="Search books, bags, stationery…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyPress}
-              className="pl-12 h-14 text-lg shadow-card focus-visible:ring-primary"
+              className="pl-12 h-12 text-base shadow-card focus-visible:ring-primary border-border"
             />
-          </motion.div>
-          <motion.div variants={fadeUp} transition={{ duration: 0.5, delay: 0.3 }} className="flex gap-4 justify-center pt-4">
-            <Button size="lg" onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover shadow-soft">Upload an Item</Button>
-            <Button size="lg" variant="outline" onClick={() => navigate("/assistant")} className="shadow-soft">Get Help from AI</Button>
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* Categories at a Glance */}
-      <div className="container mx-auto py-20 px-4">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-heading font-bold mb-4">Categories at a Glance</h2>
-          <div className="h-1 w-20 bg-primary mx-auto rounded-full" />
+            {searchQuery && (
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchQuery("")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
-        <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer}>
-          {[
-            { icon: BookOpenText, title: "Academic Gear", desc: "Textbooks, story books, and other educational books.", color: "text-primary" },
-            { icon: Backpack, title: "Daily Essentials", desc: "School bags, lunch boxes, and water bottles.", color: "text-secondary" },
-            { icon: PencilRuler, title: "Writing & Tools", desc: "Pencil boxes, geometry sets, and calculators.", color: "text-primary" },
-            { icon: ShoppingBag, title: "Add-ons", desc: "School uniforms, and other required items.", color: "text-secondary" }
-          ].map((cat) => (
-            <motion.div key={cat.title} variants={fadeUp} transition={{ duration: 0.5 }}>
-              <Card className="hover:shadow-lg transition-all hover:-translate-y-1 h-full">
-                <CardHeader className="text-center">
-                  <cat.icon className={`h-10 w-10 mx-auto mb-4 ${cat.color}`} />
-                  <CardTitle>{cat.title}</CardTitle>
-                  <CardDescription>{cat.desc}</CardDescription>
-                </CardHeader>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </div>
+      )}
 
-      {/* Listings Section */}
+      {/* ══════════════════════════════════════════
+          LISTINGS SECTION
+          ══════════════════════════════════════════ */}
       <section ref={listingsSectionRef} className="container mx-auto px-4 pb-16 scroll-mt-20">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-3xl font-heading font-bold">Available Items</h2>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-heading font-bold">
+              {recommendedCategory && activeCategories.length === 0 && !searchQuery
+                ? `Recommended for You`
+                : "Available Listings"}
+            </h2>
+            {filteredListings.length > 0 && (
+              <p className="text-sm text-muted-foreground mt-0.5">{filteredListings.length} listings</p>
+            )}
+          </div>
           <Button
             variant="outline"
             className="gap-2"
             onClick={() => setShowFilters(v => !v)}
           >
             <SlidersHorizontal className="h-4 w-4" />
-            Filters
+            <span className="hidden sm:inline">Filters</span>
             {activeFilterCount > 0 && (
-              <span className="ml-1 bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              <span className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -378,14 +605,14 @@ const Home = () => {
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <Card className="mb-6 border-primary/20">
+              <Card className="mb-6 border-primary/20 shadow-card">
                 <CardContent className="pt-5 pb-4 space-y-5">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Location</p>
                     <div className="relative max-w-sm">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
-                        placeholder="e.g. Karachi, Gulshan..."
+                        placeholder="e.g. Karachi, Gulshan…"
                         value={locationQuery}
                         onChange={(e) => setLocationQuery(e.target.value)}
                         className="pl-9 h-9 text-sm"
@@ -407,9 +634,9 @@ const Home = () => {
                           <button
                             key={value}
                             onClick={() => toggleCategory(value)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all ${active
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-background text-muted-foreground border-border hover:border-primary hover:text-foreground"
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs sm:text-sm border transition-all ${active
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
                               }`}
                           >
                             <Icon className="h-3.5 w-3.5" />
@@ -422,7 +649,7 @@ const Home = () => {
 
                   <div className="flex items-center justify-between border-t pt-4">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Listing type</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Listing Type</p>
                       <div className="flex gap-2">
                         {TYPE_FILTERS.map(({ value, label, icon: Icon }) => {
                           const active = activeTypes.includes(value);
@@ -431,10 +658,10 @@ const Home = () => {
                               key={value}
                               onClick={() => toggleType(value)}
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all ${active
-                                  ? value === "donate"
-                                    ? "bg-emerald-600 text-white border-emerald-600"
-                                    : "bg-violet-600 text-white border-violet-600"
-                                  : "bg-background text-muted-foreground border-border hover:border-primary hover:text-foreground"
+                                ? value === "donate"
+                                  ? "bg-emerald-600 text-white border-emerald-600"
+                                  : "bg-violet-600 text-white border-violet-600"
+                                : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
                                 }`}
                             >
                               <Icon className="h-3.5 w-3.5" />
@@ -460,74 +687,89 @@ const Home = () => {
         {loading ? (
           <div className="text-center py-20 flex flex-col items-center">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-            <p className="text-muted-foreground">Loading the latest contributions...</p>
+            <p className="text-muted-foreground">Loading listings…</p>
           </div>
         ) : filteredListings.length === 0 ? (
           <Card className="shadow-card">
             <CardContent className="py-20 text-center">
               <Package className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-              <h3 className="text-xl font-bold mb-2">No matching items</h3>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              <h3 className="text-xl font-bold mb-2">No listings found</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto text-sm">
                 {searchQuery
-                  ? `We couldn't find anything matching "${searchQuery}". Try a different term or browse categories.`
-                  : "No items available in this category yet. Be the first to share something!"}
+                  ? `Nothing found for "${searchQuery}". Try a different search term or browse categories.`
+                  : "No items in this category yet. Be the first to donate!"}
               </p>
-              <div className="flex justify-center gap-3">
+              <div className="flex flex-col sm:flex-row justify-center gap-3">
                 <Button variant="outline" onClick={clearAllFilters}>Reset Filters</Button>
-                <Button onClick={() => navigate("/upload")} className="bg-primary">Upload Item</Button>
+                <Button onClick={() => navigate(isLoggedIn ? "/upload" : "/auth")} className="bg-primary">
+                  {isLoggedIn ? "Upload an Item" : "Join & Donate"}
+                </Button>
               </div>
             </CardContent>
           </Card>
         ) : (
           <>
+            {recommendedCategory && activeCategories.length === 0 && !searchQuery && (
+              <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span>Personalized based on your browsing | <button onClick={() => setRecommendedCategory(null)} className="text-primary underline underline-offset-2">show all</button></span>
+              </div>
+            )}
             <motion.div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
               initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer} key={filterKey}
             >
               {filteredListings.map((item) => (
-                <motion.div key={`${item.itemType}-${item.id}`} variants={fadeUp} transition={{ duration: 0.4 }}>
+                <motion.div key={`${item.itemType}-${item.id}`} variants={fadeUp} transition={{ duration: 0.35 }}>
                   <Card
-                    className="shadow-card hover:shadow-soft transition-smooth cursor-pointer group h-full flex flex-col"
+                    className="shadow-card hover:shadow-soft transition-smooth cursor-pointer group h-full flex flex-col border-border hover:-translate-y-1"
                     onClick={() => handleItemClick(item)}
                   >
-                    <CardHeader className="p-0 overflow-hidden rounded-t-lg">
+                    <div className="relative overflow-hidden rounded-t-lg">
                       <img
                         src={getThumbnail(item.image_url)}
                         alt={item.name}
-                        className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500"
                       />
-                    </CardHeader>
+                      <div className="absolute top-2 left-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs gap-1 font-medium shadow-sm ${getTypeColor(item.type)}`}
+                        >
+                          {getTypeIcon(item.type)}<span className="capitalize">{item.type}</span>
+                        </Badge>
+                      </div>
+                    </div>
                     <CardContent className="p-4 flex-1 flex flex-col">
-                      <CardTitle className="font-heading text-lg mb-2 group-hover:text-primary transition-smooth line-clamp-1">
+                      <h3 className="font-heading font-semibold text-base mb-1.5 group-hover:text-primary transition-smooth line-clamp-2 leading-snug">
                         {item.name}
-                      </CardTitle>
+                      </h3>
+                      <div className="flex gap-1.5 flex-wrap mb-2">
+                        <Badge variant="secondary" className="text-[10px] font-medium">
+                          {getCategoryLabel(item.category)}
+                        </Badge>
+                        {item.grade && (
+                          <Badge variant="outline" className="text-[10px]">{item.grade}</Badge>
+                        )}
+                      </div>
 
-                      <div className="space-y-3 flex-1">
-                        <div className="flex gap-2 flex-wrap">
-                          <Badge variant="outline" className={getTypeColor(item.type)}>
-                            {getTypeIcon(item.type)}<span className="ml-1 capitalize">{item.type}</span>
-                          </Badge>
-                          <Badge variant="secondary" className="text-[10px] font-medium">
-                            {getCategoryLabel(item.category)}
-                          </Badge>
-                        </div>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3 leading-relaxed">
+                          {item.description}
+                        </p>
+                      )}
 
-                        <div className="pt-3 border-t mt-auto">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-1.5 overflow-hidden">
-                              <div className="size-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                                {item.owner?.name?.[0] || 'U'}
-                              </div>
-                              <span className="text-xs font-medium truncate">{item.owner?.name || 'User'}</span>
-                              {item.owner?.verified && <BadgeCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" />}
-                            </div>
-                            <UserReputation reviews={item.owner?.received_reviews} />
-                          </div>
-                          <div className="flex items-start gap-1.5 opacity-70">
-                            <MapPin className="h-3 w-3 text-primary mt-0.5 shrink-0" />
-                            <p className="text-[11px] line-clamp-1">{item.owner?.address || 'Location shared on chat'}</p>
-                          </div>
-                        </div>
+                      <div className="mt-auto flex items-center gap-1.5">
+                        {item.owner?.verified && (
+                          <BadgeCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                        )}
+                        <span className="text-xs text-muted-foreground truncate">{item.owner?.name}</span>
+                        {item.owner?.address && (
+                          <span className="text-xs text-muted-foreground ml-auto flex items-center gap-0.5 shrink-0">
+                            <MapPin className="h-3 w-3" />
+                            {item.owner.address.split(',')[0]}
+                          </span>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -535,22 +777,30 @@ const Home = () => {
               ))}
             </motion.div>
 
-            <div ref={sentinelRef} className="py-12 text-center">
-              {loadingMore && (
-                <div className="flex items-center justify-center gap-2 text-primary font-medium">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Checking for more...</span>
-                </div>
-              )}
+            {/* Load more sentinel */}
+            <div ref={sentinelRef} className="h-8 mt-8 flex items-center justify-center">
+              {loadingMore && <Loader2 className="h-6 w-6 animate-spin text-primary" />}
               {!hasMore && filteredListings.length > 0 && (
-                <div className="pt-8">
-                  <p className="text-muted-foreground text-sm bg-muted/30 py-2 px-4 rounded-full inline-block">
-                    You've seen everything we have for now! 📚
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground">All listings loaded</p>
               )}
             </div>
           </>
+        )}
+
+        {/* Guest CTA below listings */}
+        {isLoggedIn === false && (
+          <div className="mt-16">
+            <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20 p-8 text-center">
+              <BookMarked className="h-10 w-10 mx-auto text-primary mb-4" />
+              <h3 className="text-xl font-heading font-bold mb-2">Ready to share?</h3>
+              <p className="text-muted-foreground text-sm mb-5 max-w-md mx-auto">
+                Join DonoBook to donate books, exchange items, and help students in your community.
+              </p>
+              <Button onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow">
+                Create Free Account <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         )}
       </section>
     </div>

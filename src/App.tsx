@@ -15,7 +15,7 @@ import Assistant from "./pages/Assistant";
 import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
 import SearchMessages from "./pages/SearchMessages";
-import EditProfile from "./pages/EditProfile";
+// import EditProfile from "./pages/EditProfile"; deleted??? TODO.
 
 const queryClient = new QueryClient();
 
@@ -30,8 +30,8 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<UploadItem />} />
-          <Route path="/book/:id" element={<BookDetails />} />
-          <Route path="/item/:id" element={<ItemDetails />} />
+          <Route path="/book/:slug" element={<BookDetails />} />
+          <Route path="/item/:slug" element={<ItemDetails />} />
           <Route path="/conversations" element={<Conversations />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/search-messages" element={<SearchMessages />} />

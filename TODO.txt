@@ -1,0 +1,33 @@
+TO DO:
+
+UI:
+User Profile in TOp RIght
+
+Funtionliaty:
+Reccomended for you, not for non-logged in user.
+Auto scroll first page.
+Tooltips. (Tooltips refresh, auto-off etc.)
+we have seperate book_status_type, item_status_type, doing same thing
+Fix dupe of is_available and item/book_status_type
+Lock confident fields from being edited.
+Community Guidelines and Trademarking.
+
+AI\OCR Pipeline:
+Better AI\OCR metadata filling. (different tech and lookup mechanisms.)
+AI\OCR: Book Title Fix (strange) | Description Fix (t* why its starts w\ "this is..." )
+AI\OCR: Filters need fixing
+Book upload picture security. 
+AI Scan upon recieving 'n' pics.
+book validate images to be from same source.
+
+Redo: Upload Give\Recieve Mechanism
+Bundles Mechanism
+More filters working
+More Security.
+
+Misc:
+pages\EditProfile
+
+EXTRA:
+Ability to change color theme
+Persistent User Preference.

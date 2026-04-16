@@ -1,0 +1,265 @@
+@import 'leaflet/dist/leaflet.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Donobook Design System */
+
+@layer base {
+
+:root {
+
+  /* Base background (soft academic pink-lavender) */
+
+  --background: 288 42% 98%;
+  --foreground: 246 20% 22%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 246 20% 22%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 246 20% 22%;
+
+  /* Brand */
+
+  --primary: 260 75% 58%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 260 75% 50%;
+  --primary-light: 260 70% 94%;
+  --primary-glow: 260 75% 58% / 0.25;
+
+  --secondary: 219 78% 63%;
+  --secondary-foreground: 0 0% 100%;
+  --secondary-hover: 219 78% 55%;
+
+  --accent: 268 70% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  /* Supporting colors tuned to pink base */
+
+  --muted: 286 35% 95%;
+  --muted-foreground: 246 10% 45%;
+
+  --border: 286 30% 90%;
+  --input: 286 30% 92%;
+
+  --destructive: 0 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --ring: 260 75% 58%;
+
+  --radius: 0.75rem;
+
+  /* Gradients */
+
+  --gradient-primary:
+    linear-gradient(
+      135deg,
+      hsl(260 75% 65%),
+      hsl(219 78% 68%)
+    );
+
+  --gradient-hero:
+    linear-gradient(
+      160deg,
+      hsl(292 60% 97%),
+      hsl(270 55% 96%),
+      hsl(230 50% 96%)
+    );
+
+  --gradient-card:
+    linear-gradient(
+      180deg,
+      hsl(0 0% 100%),
+      hsl(286 40% 97%)
+    );
+
+  --gradient-brand:
+    linear-gradient(
+      135deg,
+      hsl(260 75% 56%),
+      hsl(219 80% 63%)
+    );
+
+  /* Elevation */
+
+  --shadow-soft:
+    0 4px 18px -4px hsl(260 40% 70% / 0.18);
+
+  --shadow-card:
+    0 8px 28px -8px hsl(260 40% 60% / 0.18);
+
+  --shadow-glow:
+    0 0 34px -4px hsl(260 75% 58% / 0.30);
+
+  /* Transitions */
+
+  --transition-smooth:
+    all 0.3s cubic-bezier(0.4,0,0.2,1);
+
+  --transition-fast:
+    all 0.15s cubic-bezier(0.4,0,0.2,1);
+
+  /* Sidebar */
+
+  --sidebar-background: 286 35% 98%;
+  --sidebar-foreground: 246 20% 28%;
+
+  --sidebar-primary: 260 75% 58%;
+  --sidebar-primary-foreground: 0 0% 100%;
+
+  --sidebar-accent: 286 30% 94%;
+  --sidebar-accent-foreground: 246 20% 28%;
+
+  --sidebar-border: 286 30% 90%;
+  --sidebar-ring: 260 75% 58%;
+}
+
+/* Dark mode */
+
+.dark {
+
+  --background: 240 18% 9%;
+  --foreground: 240 25% 96%;
+
+  --card: 240 16% 12%;
+  --card-foreground: 240 25% 96%;
+
+  --popover: 240 16% 13%;
+  --popover-foreground: 240 25% 96%;
+
+  --primary: 260 70% 70%;
+  --primary-hover: 260 70% 75%;
+  --primary-light: 260 30% 22%;
+  --primary-glow: 260 70% 70% / 0.30;
+
+  --secondary: 219 70% 68%;
+  --secondary-hover: 219 70% 74%;
+
+  --accent: 268 65% 66%;
+
+  --muted: 240 15% 18%;
+  --muted-foreground: 240 10% 70%;
+
+  --border: 240 12% 22%;
+  --input: 240 12% 20%;
+
+  --ring: 260 70% 70%;
+
+  --gradient-primary:
+    linear-gradient(
+      135deg,
+      hsl(260 60% 58%),
+      hsl(219 60% 60%)
+    );
+
+  --gradient-hero:
+    linear-gradient(
+      160deg,
+      hsl(240 18% 10%),
+      hsl(250 18% 12%),
+      hsl(240 18% 10%)
+    );
+
+  --gradient-card:
+    linear-gradient(
+      180deg,
+      hsl(240 16% 13%),
+      hsl(240 16% 11%)
+    );
+
+  --gradient-brand:
+    linear-gradient(
+      135deg,
+      hsl(260 70% 65%),
+      hsl(219 70% 65%)
+    );
+
+  --shadow-soft:
+    0 4px 20px -4px hsl(240 50% 5% / 0.55);
+
+  --shadow-card:
+    0 8px 28px -8px hsl(240 50% 5% / 0.55);
+
+  --shadow-glow:
+    0 0 30px -4px hsl(260 70% 70% / 0.25);
+
+  --sidebar-background: 240 18% 11%;
+  --sidebar-foreground: 240 20% 88%;
+
+  --sidebar-primary: 260 70% 70%;
+  --sidebar-accent: 240 15% 18%;
+  --sidebar-border: 240 12% 22%;
+}
+
+}
+
+/* Base */
+
+@layer base {
+
+* { @apply border-border; }
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,h2,h3,h4,h5,h6 {
+  font-family: 'Poppins', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+*:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+}
+
+/* Utilities */
+
+@layer utilities {
+
+.gradient-primary { background: var(--gradient-primary); }
+.gradient-hero { background: var(--gradient-hero); }
+.gradient-brand { background: var(--gradient-brand); }
+
+.gradient-text {
+  background: var(--gradient-brand);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-card { box-shadow: var(--shadow-card); }
+.shadow-glow { box-shadow: var(--shadow-glow); }
+
+.transition-smooth { transition: var(--transition-smooth); }
+.transition-fast { transition: var(--transition-fast); }
+
+.glass {
+  background: hsl(var(--card) / 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+.glass-dark {
+  background: hsl(var(--background) / 0.85);
+  backdrop-filter: blur(16px);
+}
+
+.btn-glow:hover {
+  box-shadow: var(--shadow-glow);
+}
+
+}
