@@ -9,7 +9,7 @@ import { Send, Edit2, Trash2, X, Check, PlusCircle, Package, BookOpen } from "lu
 import { useToast } from "@/hooks/use-toast";
 import { useMessageNotifications } from "@/hooks/useMessageNotifications";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
-import SafetyBanner from "@/components/SafetyBanner"
+import SafetyBanner from "@/components/SafetyBanner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,10 +46,11 @@ const Messages = () => {
   const [selectedBooks, setSelectedBooks] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
+  // Safety Banner States
+  const [showSafetyBanner, setShowSafetyBanner] = useState(false);
+  const [dontShowFor7Days, setDontShowFor7Days] = useState(false);
+
   // Stores transaction statuses keyed by transaction_id
-  // e.g. { "uuid-123": "pending", "uuid-456": "accepted" }
-  // We need this separately because transaction status lives in the
-  // transactions table, not in user_messages anymore
   const [transactionStatuses, setTransactionStatuses] = useState<Record<string, string>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -61,6 +62,36 @@ const Messages = () => {
   useEffect(() => {
     setTimeout(() => scrollToBottom(), 100);
   }, [messages, currentUserId]);
+
+  // Handle Safety Banner Local Storage Logic
+  useEffect(() => {
+    const lastDismissed = localStorage.getItem('safetyBannerDismissedAt');
+    if (lastDismissed) {
+      const dismissedDate = new Date(lastDismissed);
+      const now = new Date();
+      // Calculate diff in days
+      const daysSince = (now.getTime() - dismissedDate.getTime()) / (1000 * 3600 * 24);
+      
+      if (daysSince >= 7) {
+        setShowSafetyBanner(true); // 7 days have passed, show it again
+      } else {
+        setShowSafetyBanner(false); // Within 7 days, keep it hidden
+      }
+    } else {
+      setShowSafetyBanner(true); // No record found, show it by default
+    }
+  }, []);
+
+  const handleDismissBanner = () => {
+    if (dontShowFor7Days) {
+      // User checked the box, save the current date
+      localStorage.setItem('safetyBannerDismissedAt', new Date().toISOString());
+    } else {
+      // User didn't check the box, ensure it shows up next time
+      localStorage.removeItem('safetyBannerDismissedAt');
+    }
+    setShowSafetyBanner(false);
+  };
 
   useMessageNotifications({
     currentUserId,
@@ -76,9 +107,6 @@ const Messages = () => {
 
   useEffect(() => { checkAuth(); }, []);
 
-  // BUG FIX 1: You had two separate useEffects both calling fetchAllUsers()
-  // when currentUserId changed — one also called fetchUserInventory().
-  // Merged into one to avoid double-fetching.
   useEffect(() => {
     if (currentUserId) {
       fetchAllUsers();
@@ -129,37 +157,37 @@ const Messages = () => {
   const fetchMessages = async () => {
     if (!currentUserId || !otherUserId) return;
 
-    const { data, error } = await supabase
-      .from("user_messages")
-      .select("*")
-      .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUserId})`)
-      .order("created_at", { ascending: true });
-
-    if (error) { console.error("Error fetching messages:", error); return; }
-    setMessages(data || []);
-
-    // After loading messages, find all transaction_ids so we can
-    // fetch their current statuses from the transactions table.
-    // We can't store status in user_messages anymore since we removed
-    // the transaction_status column.
-    const txIds = (data || [])
-      .filter(m => m.transaction_id)
-      .map(m => m.transaction_id as string);
-
-    if (txIds.length > 0) {
-      const { data: txData } = await supabase
+    const [messagesRes, transactionsRes] = await Promise.all([
+      supabase
+        .from("user_messages")
+        .select("*")
+        .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUserId})`)
+        .order("created_at", { ascending: true }),
+      supabase
         .from("transactions")
-        .select("id, status")
-        .in("id", txIds);
+        .select("*")
+        .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUserId})`)
+    ]);
 
-      // Build a lookup map: { [transaction_id]: status }
-      const statusMap = (txData || []).reduce((acc, tx) => ({
-        ...acc,
-        [tx.id]: tx.status
-      }), {} as Record<string, string>);
+    if (messagesRes.error) return;
 
-      setTransactionStatuses(statusMap);
-    }
+    const allTx = transactionsRes.data || [];
+
+    const enrichedMessages = (messagesRes.data || []).map((msg) => {
+      const linkedTx = allTx.find(tx => tx.message_id === msg.id);
+      return {
+        ...msg,
+        transaction_id: linkedTx ? linkedTx.id : null
+      };
+    });
+
+    setMessages(enrichedMessages);
+
+    const statusMap = allTx.reduce((acc, tx) => ({
+      ...acc, [tx.id]: tx.status
+    }), {} as Record<string, string>);
+
+    setTransactionStatuses(statusMap);
   };
 
   const markMessagesAsRead = async () => {
@@ -174,36 +202,39 @@ const Messages = () => {
   };
 
   const subscribeToMessages = () => {
-    // Realtime subscription — fires whenever a new message is inserted.
-    // We filter client-side to only add messages that belong to THIS conversation.
     const channel = supabase
       .channel(`user_messages-${currentUserId}-${otherUserId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_messages' },
-        (payload) => {
+        async (payload) => {
           const newMsg = payload.new as Message;
+
           if (
             (newMsg.sender_id === currentUserId && newMsg.receiver_id === otherUserId) ||
             (newMsg.sender_id === otherUserId && newMsg.receiver_id === currentUserId)
           ) {
-            setMessages((prev) => [...prev, newMsg]);
 
-            // BUG FIX 2: When a new offer message arrives via realtime,
-            // its transaction_id exists but transactionStatuses won't have
-            // it yet. We need to fetch and add it to the status map.
-            if (newMsg.transaction_id) {
-              supabase
-                .from("transactions")
-                .select("id, status")
-                .eq("id", newMsg.transaction_id)
-                .single()
-                .then(({ data }) => {
-                  if (data) {
-                    setTransactionStatuses(prev => ({
-                      ...prev,
-                      [data.id]: data.status
-                    }));
-                  }
-                });
+            const { data: txData } = await supabase
+              .from("transactions")
+              .select("id, status")
+              .eq("message_id", newMsg.id)
+              .maybeSingle();
+
+            const enrichedMsg = {
+              ...newMsg,
+              transaction_id: txData ? txData.id : null
+            };
+
+            setMessages((prev) => {
+              const exists = prev.some(m => m.id === enrichedMsg.id);
+              if (exists) return prev;
+              return [...prev, enrichedMsg];
+            });
+
+            if (txData) {
+              setTransactionStatuses(prev => ({
+                ...prev,
+                [txData.id]: txData.status
+              }));
             }
           }
         }
@@ -314,17 +345,38 @@ const Messages = () => {
     if (selectedBooks.length === 0 && selectedItems.length === 0) return;
 
     try {
-      // Step 1: Create a transaction record first.
-      // This is the "source of truth" for the offer's status.
+      const bookTitles = userBooks.filter(b => selectedBooks.includes(b.id)).map(b => b.title);
+      const itemNames = userItems.filter(i => selectedItems.includes(i.id)).map(i => i.name);
+      const allNames = [...bookTitles, ...itemNames];
+      const messageText = allNames.length > 1
+        ? `I have a bundle offer: ${allNames.join(", ")}. Would you like to accept?`
+        : `I would like to offer: "${allNames[0]}". Do you accept?`;
+
+      const { data: newMsg, error: msgError } = await supabase
+        .from("user_messages")
+        .insert({
+          sender_id: currentUserId,
+          receiver_id: otherUserId,
+          text: messageText
+        })
+        .select()
+        .single();
+
+      if (msgError) throw msgError;
+
       const { data: transaction, error: txError } = await supabase
         .from("transactions")
-        .insert({ sender_id: currentUserId, receiver_id: otherUserId, status: "pending" })
+        .insert({
+          sender_id: currentUserId,
+          receiver_id: otherUserId,
+          status: "pending",
+          message_id: newMsg.id 
+        })
         .select()
         .single();
 
       if (txError) throw txError;
 
-      // Step 2: Insert selected books into junction table
       if (selectedBooks.length > 0) {
         const { error } = await supabase
           .from("transaction_books")
@@ -332,7 +384,6 @@ const Messages = () => {
         if (error) throw error;
       }
 
-      // Step 3: Insert selected items into junction table
       if (selectedItems.length > 0) {
         const { error } = await supabase
           .from("transaction_items")
@@ -340,8 +391,6 @@ const Messages = () => {
         if (error) throw error;
       }
 
-      // Step 4: Mark all selected books/items as pending so they
-      // don't show up as available for other users while offer is open
       if (selectedBooks.length > 0) {
         await supabase.from("books")
           .update({ status: "pending", is_available: false })
@@ -353,23 +402,15 @@ const Messages = () => {
           .in("id", selectedItems);
       }
 
-      // Step 5: Build a human-readable message text for the chat
-      const bookTitles = userBooks.filter(b => selectedBooks.includes(b.id)).map(b => b.title);
-      const itemNames = userItems.filter(i => selectedItems.includes(i.id)).map(i => i.name);
-      const allNames = [...bookTitles, ...itemNames];
-      const messageText = allNames.length > 1
-        ? `I have a bundle offer: ${allNames.join(", ")}. Would you like to accept?`
-        : `I would like to offer: "${allNames[0]}". Do you accept?`;
-
-      // Step 6: Send the chat message linked to the transaction via transaction_id
-      const { error: msgError } = await supabase
-        .from("user_messages")
-        .insert({ sender_id: currentUserId, receiver_id: otherUserId, text: messageText, transaction_id: transaction.id });
-
-      if (msgError) throw msgError;
-
-      // Step 7: Immediately update local transactionStatuses so the
-      // sender sees "Waiting for response..." without needing a re-fetch
+      setMessages((prev) => {
+        if (prev.some(m => m.id === newMsg.id)) {
+          return prev.map(m => m.id === newMsg.id
+            ? { ...m, transaction_id: transaction.id }
+            : m
+          );
+        }
+        return [...prev, { ...newMsg, transaction_id: transaction.id }];
+      });
       setTransactionStatuses(prev => ({ ...prev, [transaction.id]: "pending" }));
 
       toast({ title: "Offer Sent!", description: `Offered ${allNames.length} item(s).` });
@@ -387,7 +428,6 @@ const Messages = () => {
     try {
       if (!message.transaction_id) return;
 
-      // Step 1: Update the transaction status in the transactions table
       const { error: txError } = await supabase
         .from("transactions")
         .update({ status: accept ? "accepted" : "declined", resolved_at: new Date().toISOString() })
@@ -395,8 +435,6 @@ const Messages = () => {
 
       if (txError) throw txError;
 
-      // Step 2: Fetch the books/items linked to this transaction
-      // from the junction tables (replacing the old book_ids/item_ids arrays)
       const { data: txBooks } = await supabase
         .from("transaction_books")
         .select("book_id")
@@ -410,28 +448,20 @@ const Messages = () => {
       const bookIds = (txBooks || []).map(r => r.book_id);
       const itemIds = (txItems || []).map(r => r.item_id);
 
-      // Step 3: Update books — if accepted, mark as claimed with receiver.
-      // If declined, make available again for others.
       if (bookIds.length > 0) {
         const { error } = await supabase.from("books").update({
           status: accept ? "claimed" : "available",
           is_available: !accept,
-          receiver_id: accept ? message.receiver_id : null,
         }).in("id", bookIds);
       }
 
-      // Step 4: Same logic for items
       if (itemIds.length > 0) {
         await supabase.from("items").update({
           status: accept ? "claimed" : "available",
           is_available: !accept,
-          receiver_id: accept ? message.receiver_id : null,
         }).in("id", itemIds);
       }
 
-      // BUG FIX 3: The old code called fetchMessages() here which re-fetches
-      // everything from the server. Instead, update transactionStatuses locally
-      // so the UI updates instantly without a round trip.
       setTransactionStatuses(prev => ({
         ...prev,
         [message.transaction_id]: accept ? "accepted" : "declined"
@@ -442,7 +472,7 @@ const Messages = () => {
         description: accept ? "Items marked as claimed." : "Items are available again.",
       });
 
-      fetchUserInventory(); // Refresh inventory list
+      fetchUserInventory();
     } catch (error) {
       console.error(error);
       toast({ title: "Error", description: "Failed to process transaction", variant: "destructive" });
@@ -468,23 +498,33 @@ const Messages = () => {
     setUserItems(items || []);
   };
 
-  // --- IF NO USER SELECTED, SHOW USER LIST ---
   if (!otherUserId) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
         <div className="container mx-auto px-4 py-8">
-          <Card className="shadow-card max-w-2xl mx-auto">
-            <CardHeader><CardTitle>Start a chat</CardTitle></CardHeader>
+          <Card className="shadow-sm border-border max-w-2xl mx-auto">
+            <CardHeader>
+              <CardTitle className="font-heading">Messages</CardTitle>
+              <p className="text-muted-foreground text-sm">Select a user to start chatting</p>
+            </CardHeader>
             <CardContent className="p-4 space-y-2">
               {users.length > 0 ? (
                 users.map((user) => (
-                  <Button key={user.id} onClick={() => navigate(`/messages?userId=${user.id}`)} className="w-full text-left">
+                  <Button 
+                    key={user.id} 
+                    variant="ghost"
+                    onClick={() => navigate(`/messages?userId=${user.id}`)} 
+                    className="w-full justify-start h-14 border border-transparent hover:border-border hover:bg-muted/50"
+                  >
+                    <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center mr-3 shrink-0">
+                      {user.name ? user.name.charAt(0).toUpperCase() : "U"}
+                    </div>
                     {user.name || "Unnamed User"}
                   </Button>
                 ))
               ) : (
-                <p className="text-center text-muted-foreground">No users available to chat with.</p>
+                <p className="text-center text-muted-foreground py-8">No users available to chat with.</p>
               )}
             </CardContent>
           </Card>
@@ -493,86 +533,110 @@ const Messages = () => {
     );
   }
 
-  // --- SHOW CHAT IF USER SELECTED ---
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen relative bg-muted/20">
       <Navbar />
-      <div className="container mx-auto px-4 py-8">
-        <Card className="shadow-card max-w-4xl mx-auto">
-          <CardHeader className="border-b">
-            <CardTitle className="font-heading">Chat with {otherUser?.name || "User"}</CardTitle>
+      <div className="container mx-auto px-4 py-6">
+        <Card className="shadow-md border-border max-w-4xl mx-auto overflow-hidden flex flex-col h-[75vh]">
+          {/* Chat Header */}
+          <CardHeader className="border-b bg-background px-6 py-4 shrink-0 shadow-sm z-10">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
+                {otherUser?.name ? otherUser.name.charAt(0).toUpperCase() : "U"}
+              </div>
+              <div>
+                <CardTitle className="font-heading text-lg">{otherUser?.name || "User"}</CardTitle>
+                {otherUserTyping && <p className="text-xs text-primary animate-pulse">Typing...</p>}
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="h-96 overflow-y-auto p-4 space-y-4">
+
+          {/* Chat Messages Area */}
+          <CardContent className="p-0 flex-1 overflow-y-auto bg-slate-50/50 dark:bg-background relative">
+            <div className="p-4 sm:p-6 space-y-6">
               {messages.map((message) => {
                 const isSentByUser = message.sender_id === currentUserId;
                 const isEditing = editingMessageId === message.id;
-
-                // Look up this message's transaction status from our local map.
-                // Falls back to "pending" if not found (safe default).
                 const txStatus = message.transaction_id
                   ? (transactionStatuses[message.transaction_id] ?? "pending")
                   : null;
 
                 return (
                   <div key={message.id} className={`flex ${isSentByUser ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-xs group relative ${isSentByUser ? "bg-primary text-primary-foreground" : "bg-muted"} px-4 py-2 rounded-lg`}>
+                    <div className={`max-w-[85%] sm:max-w-md group relative px-4 py-3 shadow-sm ${
+                      isSentByUser 
+                        ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm" 
+                        : "bg-background border border-border text-foreground rounded-2xl rounded-tl-sm"
+                    }`}>
+                      
                       {isEditing ? (
-                        <div className="space-y-2">
-                          <Input value={editedText} onChange={(e) => setEditedText(e.target.value)} className="text-sm" autoFocus />
+                        <div className="space-y-3 min-w-[200px]">
+                          <Input 
+                            value={editedText} 
+                            onChange={(e) => setEditedText(e.target.value)} 
+                            className={`text-sm h-9 ${isSentByUser ? 'bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground placeholder:text-primary-foreground/50' : ''}`} 
+                            autoFocus 
+                          />
                           <div className="flex gap-2 justify-end">
-                            <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-6 px-2"><X className="h-3 w-3" /></Button>
-                            <Button size="sm" onClick={() => saveEdit(message.id, message.text)} className="h-6 px-2"><Check className="h-3 w-3" /></Button>
+                            <Button size="sm" variant="ghost" onClick={cancelEdit} className={`h-7 px-3 ${isSentByUser ? 'hover:bg-primary-foreground/20 hover:text-primary-foreground text-primary-foreground' : ''}`}><X className="h-3 w-3 mr-1" /> Cancel</Button>
+                            <Button size="sm" onClick={() => saveEdit(message.id, message.text)} className={`h-7 px-3 ${isSentByUser ? 'bg-primary-foreground text-primary hover:bg-primary-foreground/90' : ''}`}><Check className="h-3 w-3 mr-1" /> Save</Button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <p>{message.text}</p>
-                          {message.edited_at && <p className="text-xs opacity-60 italic mt-1">(edited)</p>}
-                          <div className="flex items-center justify-between mt-1">
-                            <p className="text-xs opacity-70">
-                              {new Date(message.created_at || "").toLocaleTimeString()}
-                            </p>
+                          <p className="text-[15px] leading-relaxed break-words">{message.text}</p>
+                          
+                          <div className={`flex items-center justify-end mt-1.5 gap-2 text-[11px] font-medium ${isSentByUser ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                            {message.edited_at && <span className="italic">(edited)</span>}
+                            <span>{new Date(message.created_at || "").toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             {isSentByUser && (
-                              <p className="text-xs opacity-70 ml-2">{message.read ? "✓✓" : "✓"}</p>
+                              <span>{message.read ? <span className="text-blue-200">✓✓</span> : "✓"}</span>
                             )}
                           </div>
 
-                          {/* Only render transaction UI if this message has a linked transaction */}
+                          {/* Transaction Card inside Bubble */}
                           {!!message.transaction_id && (
-                            <div className="mt-3 p-3 border rounded-md bg-background/20 text-foreground space-y-3">
-                              <p className="font-semibold text-sm">Transaction Proposal</p>
+                            <div className={`mt-3 p-3.5 rounded-xl border ${
+                              isSentByUser 
+                                ? 'bg-primary-foreground/10 border-primary-foreground/20' 
+                                : 'bg-muted/50 border-border'
+                            } space-y-3`}>
+                              <p className="font-semibold text-sm flex items-center gap-2">
+                                <Package className="h-4 w-4" /> Transaction Proposal
+                              </p>
 
                               {txStatus === 'pending' ? (
-                                // Only the RECEIVER sees Accept/Decline buttons
                                 !isSentByUser ? (
-                                  <div className="flex gap-2">
-                                    <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8 text-white" onClick={() => handleTransaction(message, true)}>Accept</Button>
-                                    <Button size="sm" variant="destructive" className="h-8" onClick={() => handleTransaction(message, false)}>Decline</Button>
+                                  <div className="flex gap-2 pt-1">
+                                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-8 flex-1 text-white shadow-sm" onClick={() => handleTransaction(message, true)}>Accept</Button>
+                                    <Button size="sm" variant="destructive" className="h-8 flex-1 shadow-sm" onClick={() => handleTransaction(message, false)}>Decline</Button>
                                   </div>
                                 ) : (
-                                  // Sender sees a waiting message
-                                  <p className="text-xs italic opacity-70">Waiting for response...</p>
+                                  <p className="text-xs italic opacity-80 pt-1">Waiting for response...</p>
                                 )
                               ) : (
-                                // Once resolved, show final status to both users
-                                <p className={`text-sm font-bold ${txStatus === 'accepted' ? 'text-green-500' : 'text-red-500'}`}>
+                                <div className={`text-sm font-bold flex items-center gap-1.5 pt-1 ${
+                                  txStatus === 'accepted' 
+                                    ? (isSentByUser ? 'text-emerald-300' : 'text-emerald-600') 
+                                    : (isSentByUser ? 'text-red-300' : 'text-red-500')
+                                }`}>
+                                  {txStatus === 'accepted' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
                                   Offer {txStatus?.toUpperCase()}
-                                </p>
+                                </div>
                               )}
                             </div>
                           )}
                         </>
                       )}
 
-                      {/* Edit/Delete — only visible on hover for sender's own messages */}
+                      {/* Edit/Delete Actions overlaying the bubble on hover */}
                       {isSentByUser && !isEditing && (
-                        <div className="absolute -left-20 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => startEditMessage(message)} className="h-8 w-8 p-0 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-200 hover:text-blue-700">
-                            <Edit2 className="h-3 w-3" />
+                        <div className="absolute -left-20 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-1 bg-background p-1 rounded-full shadow-sm border border-border">
+                          <Button size="icon" variant="ghost" onClick={() => startEditMessage(message)} className="h-7 w-7 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-full">
+                            <Edit2 className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setDeletingMessageId(message.id)} className="h-8 w-8 p-0 text-destructive bg-red-50 hover:bg-red-200 hover:text-destructive">
-                            <Trash2 className="h-3 w-3" />
+                          <Button size="icon" variant="ghost" onClick={() => setDeletingMessageId(message.id)} className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-full">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       )}
@@ -580,31 +644,43 @@ const Messages = () => {
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
-
-              {otherUserTyping && (
-                <div className="flex justify-start mt-2">
-                  <div className="bg-muted px-4 py-2 rounded-lg">
-                    <p className="text-sm text-muted-foreground italic">{otherUser?.name || "User"} is typing...</p>
-                  </div>
-                </div>
-              )}
+              <div ref={messagesEndRef} className="h-1" />
             </div>
-
-            <form onSubmit={handleSendMessage} className="border-t p-4 flex gap-2 items-center">
-              <Button type="button" variant="ghost" size="icon" onClick={() => setIsOfferModalOpen(true)} className="text-primary hover:bg-primary/10">
-                <PlusCircle className="h-6 w-6" />
-              </Button>
-              <Input type="text" value={newMessage} onChange={(e) => handleTyping(e.target.value)} placeholder="Type your message..." className="flex-1" />
-              <Button type="submit"><Send className="h-4 w-4" /></Button>
-            </form>
           </CardContent>
-        </Card>
-        <div className="max-w-4xl mx-auto mt-4">
-          <SafetyBanner />
-        </div>
 
-        {/* Delete confirmation */}
+          {/* Chat Input Box */}
+          <div className="border-t bg-background p-4 shrink-0 shadow-[0_-4px_10px_rgb(0,0,0,0.02)] z-10">
+            <form onSubmit={handleSendMessage} className="flex gap-2 items-end max-w-4xl mx-auto">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="icon" 
+                onClick={() => setIsOfferModalOpen(true)} 
+                className="shrink-0 rounded-full h-12 w-12 border-border text-primary hover:bg-primary/5 hover:border-primary/30 transition-colors"
+                title="Send an offer"
+              >
+                <PlusCircle className="h-5 w-5" />
+              </Button>
+              <Input 
+                type="text" 
+                value={newMessage} 
+                onChange={(e) => handleTyping(e.target.value)} 
+                placeholder="Type a message..." 
+                className="flex-1 rounded-3xl h-12 px-5 bg-muted/40 border-transparent hover:bg-muted/60 focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-primary shadow-none text-[15px]" 
+              />
+              <Button 
+                type="submit" 
+                size="icon"
+                disabled={!newMessage.trim()}
+                className="shrink-0 rounded-full h-12 w-12 bg-primary hover:bg-primary-hover shadow-sm disabled:opacity-50 transition-all"
+              >
+                <Send className="h-5 w-5" />
+              </Button>
+            </form>
+          </div>
+        </Card>
+
+        {/* Delete confirmation (Standard alert dialog) */}
         <AlertDialog open={!!deletingMessageId} onOpenChange={() => setDeletingMessageId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -618,7 +694,7 @@ const Messages = () => {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Offer modal */}
+        {/* Offer modal (Standard alert dialog) */}
         <AlertDialog open={isOfferModalOpen} onOpenChange={setIsOfferModalOpen}>
           <AlertDialogContent className="max-w-md">
             <AlertDialogHeader>
@@ -627,49 +703,102 @@ const Messages = () => {
             </AlertDialogHeader>
 
             <div className="flex gap-4 border-b mb-4">
-              <button onClick={() => setOfferTab('books')} className={`pb-2 px-2 ${offerTab === 'books' ? 'border-b-2 border-primary font-bold' : 'opacity-50'}`}>
+              <button onClick={() => setOfferTab('books')} className={`pb-2 px-2 transition-colors ${offerTab === 'books' ? 'border-b-2 border-primary font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                 Books ({userBooks.length})
               </button>
-              <button onClick={() => setOfferTab('items')} className={`pb-2 px-2 ${offerTab === 'items' ? 'border-b-2 border-primary font-bold' : 'opacity-50'}`}>
+              <button onClick={() => setOfferTab('items')} className={`pb-2 px-2 transition-colors ${offerTab === 'items' ? 'border-b-2 border-primary font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                 Items ({userItems.length})
               </button>
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2">
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
               {offerTab === 'books' ? (
                 userBooks.map(b => (
-                  <div key={b.id} onClick={() => handleToggleSelection(b.id, 'book')} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedBooks.includes(b.id) ? "bg-primary/5 border-primary shadow-sm" : "hover:bg-slate-50"}`}>
-                    <div className={`w-5 h-5 rounded flex items-center justify-center border ${selectedBooks.includes(b.id) ? "bg-primary border-primary text-white" : "bg-white"}`}>
+                  <div key={b.id} onClick={() => handleToggleSelection(b.id, 'book')} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selectedBooks.includes(b.id) ? "bg-primary/5 border-primary shadow-sm" : "hover:bg-slate-50 border-border"}`}>
+                    <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedBooks.includes(b.id) ? "bg-primary border-primary text-white" : "bg-background"}`}>
                       {selectedBooks.includes(b.id) && <Check className="h-3 w-3" />}
                     </div>
-                    <BookOpen className="h-4 w-4 text-slate-400" />
-                    <span className="text-sm font-medium flex-1">{b.title}</span>
+                    <BookOpen className="h-4 w-4 text-slate-400 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{b.title}</span>
                   </div>
                 ))
               ) : (
                 userItems.map(i => (
-                  <div key={i.id} onClick={() => handleToggleSelection(i.id, 'item')} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedItems.includes(i.id) ? "bg-primary/5 border-primary shadow-sm" : "hover:bg-slate-50"}`}>
-                    <div className={`w-5 h-5 rounded flex items-center justify-center border ${selectedItems.includes(i.id) ? "bg-primary border-primary text-white" : "bg-white"}`}>
+                  <div key={i.id} onClick={() => handleToggleSelection(i.id, 'item')} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selectedItems.includes(i.id) ? "bg-primary/5 border-primary shadow-sm" : "hover:bg-slate-50 border-border"}`}>
+                    <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedItems.includes(i.id) ? "bg-primary border-primary text-white" : "bg-background"}`}>
                       {selectedItems.includes(i.id) && <Check className="h-3 w-3" />}
                     </div>
-                    <Package className="h-4 w-4 text-slate-400" />
-                    <span className="text-sm font-medium flex-1">{i.name}</span>
+                    <Package className="h-4 w-4 text-slate-400 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{i.name}</span>
                   </div>
                 ))
               )}
               {(offerTab === 'books' ? userBooks : userItems).length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-4">No available {offerTab} found.</p>
+                <div className="text-center py-8 bg-muted/30 rounded-lg border border-dashed">
+                  <p className="text-sm text-muted-foreground">No available {offerTab} found.</p>
+                </div>
               )}
             </div>
 
-            <span className="text-xs">Selected: {selectedBooks.length + selectedItems.length}</span>
-            <AlertDialogFooter>
-              <Button size="sm" onClick={sendOffer} disabled={selectedBooks.length === 0 && selectedItems.length === 0}>Send Offer</Button>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs font-medium text-muted-foreground">Selected: {selectedBooks.length + selectedItems.length} items</span>
+            </div>
+            
+            <AlertDialogFooter className="mt-4 border-t pt-4">
               <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <Button onClick={sendOffer} disabled={selectedBooks.length === 0 && selectedItems.length === 0}>Send Offer</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {/* 
+        ================================================================
+        CUSTOM CENTERED MODAL FOR SAFETY BANNER
+        ================================================================
+      */}
+      {showSafetyBanner && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl overflow-hidden border border-border animate-in zoom-in-95 duration-200">
+            
+            {/* Header Area */}
+            <div className="bg-primary/5 px-6 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-heading font-bold text-lg text-foreground">Safety Notice</h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted"
+                onClick={() => setShowSafetyBanner(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Content Area */}
+            <div className="p-6">
+              <SafetyBanner />
+              
+              <div className="mt-6 flex flex-col gap-3">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={dontShowFor7Days}
+                    onChange={(e) => setDontShowFor7Days(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  Don't show this again for 7 days
+                </label>
+                <Button
+                  className="w-full h-11 font-medium"
+                  onClick={handleDismissBanner}
+                >
+                  Continue to Chat
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

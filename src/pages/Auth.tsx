@@ -52,6 +52,28 @@ const Auth = () => {
     setIsSignup(searchParams.get("mode") === "signup");
   }, [searchParams]);
 
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        // This is where users are sent after logging in
+        redirectTo: window.location.origin,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+
+    if (error) {
+      toast({
+        title: "Login Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -355,6 +377,14 @@ const Auth = () => {
                 disabled={loading}
               >
                 {loading ? "Loading..." : isSignup ? "Sign Up" : "Login"}
+              </Button>
+              <Button
+                onClick={handleGoogleLogin}
+                variant="outline"
+                className="w-full flex gap-2"
+              >
+                <img src="/google-icon.svg" alt="Google" className="w-5 h-5" />
+                Continue with Google
               </Button>
             </form>
             <div className="mt-4 text-center text-sm">

@@ -126,37 +126,98 @@ const Dashboard = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const [booksRes, itemsRes, givenBooksRes, givenItemsRes, receivedBooksRes, receivedItemsRes] = await Promise.all([
-        // 1. Currently Owned & Available/Pending
+
+      const [booksRes, itemsRes, givenBooksRes, givenItemsRes, receivedBooksRaw, receivedItemsRaw] = await Promise.all([
+        // 1. My active listings
         supabase.from("books").select("*").eq("owner_id", user.id).neq("status", "claimed"),
         supabase.from("items").select("*").eq("owner_id", user.id).neq("status", "claimed"),
 
-        // 2. Given Away (Owned by me, but status is claimed)
+        // 2. Given away (I own, status=claimed) — same query as before, already works
+        supabase.from("books")
+          .select(`*, transaction_books!inner(transactions!inner(status, receiver_id, receiver:profiles!receiver_id(name)))`)
+          .eq("owner_id", user.id)
+          .eq("status", "claimed"),
 
-        /* The profiles!receiver_id(name) syntax tells Supabase: "Look at the receiver_id column, 
-         find that person in the profiles table, and just give me their name." */
-        supabase.from("books").select(`*, receiver:profiles!books_receiver_id_fkey(name)`).eq("owner_id", user.id).eq("status", "claimed"),
-        supabase.from("items").select(`*, receiver:profiles!items_receiver_id_fkey(name)`).eq("owner_id", user.id).eq("status", "claimed"),
+        supabase.from("items")
+          .select(`*, transaction_items!inner(transactions!inner(status, receiver_id, receiver:profiles!receiver_id(name)))`)
+          .eq("owner_id", user.id)
+          .eq("status", "claimed"),
 
-        // 3. Received (Owned by others, but receiver_id is me)
-        supabase.from("books").select(`*, owner:profiles!books_owner_id_fkey(name), reviews(id)`).eq("receiver_id", user.id),
-        supabase.from("items").select(`*, owner:profiles!items_owner_id_fkey(name), reviews(id)`).eq("receiver_id", user.id)
+        // 3. Received — fetch all accepted transactions where I'm the receiver,
+        //    then join back to books
+        supabase.from("transactions")
+          .select(`
+            id,
+            receiver_id,
+            status,
+            transaction_books!inner(
+              books!inner(
+                *,
+                owner:profiles!books_owner_id_fkey(name),
+                reviews(id)
+              )
+            )
+          `)
+          .eq("receiver_id", user.id)
+          .eq("status", "successful"),
+
+        supabase.from("transactions")
+          .select(`
+            id,
+            receiver_id,
+            status,
+            transaction_items!inner(
+              items!inner(
+                *,
+                owner:profiles!items_owner_id_fkey(name),
+                reviews(id)
+              )
+            )
+          `)
+          .eq("receiver_id", user.id)
+          .eq("status", "successful"),
       ]);
 
       if (booksRes.error) throw booksRes.error;
       if (itemsRes.error) throw itemsRes.error;
+
+      // 1. Update processedGivenBooks
+      const processedGivenBooks = (givenBooksRes.data || []).map((book: any) => {
+        const winningTx = book.transaction_books?.find(
+          (tb: any) =>
+            tb.transactions?.status === 'accepted' || tb.transactions?.status === 'successful'
+        );
+        return {
+          ...book,
+          receiver: { name: winningTx?.transactions?.receiver?.name || "Unknown" }
+        };
+      });
+
+      // 2. Update processedGivenItems
+      const processedGivenItems = (givenItemsRes.data || []).map((item: any) => {
+        const winningTx = item.transaction_items?.find(
+          (ti: any) =>
+            ti.transactions?.status === 'accepted' || ti.transactions?.status === 'successful'
+        );
+        return {
+          ...item,
+          receiver: { name: winningTx?.transactions?.receiver?.name || "Unknown" }
+        };
+      });
+
+      // Flatten received books/items out of the transactions wrapper
+      const receivedBooks = (receivedBooksRaw.data || []).flatMap((tx: any) =>
+        (tx.transaction_books || []).map((tb: any) => tb.books)
+      ).filter(Boolean);
+
+      const receivedItems = (receivedItemsRaw.data || []).flatMap((tx: any) =>
+        (tx.transaction_items || []).map((ti: any) => ti.items)
+      ).filter(Boolean);
+
       setBooks(booksRes.data || []);
       setItems(itemsRes.data || []);
-
-      setGivenAway([
-        ...(givenBooksRes.data || []),
-        ...(givenItemsRes.data || [])
-      ]);
-
-      setReceivedItems([
-        ...(receivedBooksRes.data || []),
-        ...(receivedItemsRes.data || [])
-      ]);
+      setGivenAway([...processedGivenBooks, ...processedGivenItems]);
+      setReceivedItems([...receivedBooks, ...receivedItems]);
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to load";
@@ -260,12 +321,41 @@ const Dashboard = () => {
   };
 
   const handleConfirmHandover = async (item: any, table: 'books' | 'items') => {
-    const { error } = await supabase
+    const { error: listingError } = await supabase
       .from(table)
-      .update({ handover_confirmed: true, status: 'claimed', is_available: false })
+      .update({
+        handover_confirmed: true,
+        status: 'claimed',
+        is_available: false
+      })
       .eq('id', item.id);
 
-    if (error) throw error;
+    if (listingError) throw listingError;
+
+    // 2. Find the Transaction ID via the mapping table
+    // If it's a book, look in 'transaction_books'. If an item, 'transaction_items'.
+    const mappingTable = table === 'books' ? 'transaction_books' : 'transaction_items';
+    const foreignKeyColumn = table === 'books' ? 'book_id' : 'item_id';
+
+    const { data: mappingData, error: mappingError } = await supabase
+      .from(mappingTable)
+      .select('transaction_id')
+      .eq(foreignKeyColumn, item.id)
+      .maybeSingle(); // Gets the specific transaction linked to this item
+
+    if (mappingError) throw mappingError;
+
+    // 3. Update the Transaction Status using the ID we just found
+    if (mappingData?.transaction_id) {
+      const { error: txUpdateError } = await supabase
+        .from("transactions")
+        .update({ status: "successful" })
+        .eq('id', mappingData.transaction_id);
+
+      if (txUpdateError) throw txUpdateError;
+    } else {
+      console.warn("No linked transaction found for this item.");
+    }
 
     toast({
       title: "Handover Confirmed!",

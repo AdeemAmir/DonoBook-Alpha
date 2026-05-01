@@ -19,10 +19,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-const Navbar = ({ userProfile }: { userProfile?: any }) => {
+const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [profile, setProfile] = useState<any>(propUserProfile || null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -37,6 +38,7 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
       if (session?.user) {
         checkAdminRole(session.user.id);
         subscribeToUnreadMessages(session.user.id);
+        if (!propUserProfile) fetchUserProfile(session.user.id);
       }
     });
 
@@ -46,14 +48,27 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
       if (session?.user) {
         checkAdminRole(session.user.id);
         subscribeToUnreadMessages(session.user.id);
+        if (!propUserProfile) fetchUserProfile(session.user.id);
       } else {
         setIsAdmin(false);
         setUnreadMessages(0);
+        setProfile(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [propUserProfile]);
+
+  const fetchUserProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    if (!error && data) {
+      setProfile(data);
+    }
+  };
 
   const checkAdminRole = async (userId: string) => {
     const { data } = await supabase
@@ -67,10 +82,8 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
   };
 
   const subscribeToUnreadMessages = (userId: string) => {
-    // Fetch initial unread count
     fetchUnreadCount(userId);
 
-    // Subscribe to real-time changes
     const channel = supabase
       .channel(`user_messages-${userId}`)
       .on(
@@ -81,7 +94,6 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
           table: 'user_messages',
         },
         () => {
-          // Refetch unread count on any message change
           fetchUnreadCount(userId);
         }
       )
@@ -117,6 +129,10 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
       });
       navigate("/");
     }
+  };
+
+  const getInitials = (name?: string) => {
+    return name ? name.charAt(0).toUpperCase() : <User className="h-4 w-4" />;
   };
 
   return (
@@ -176,23 +192,52 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
                     Admin Panel
                   </Button>
                 )}
-                <Button variant="outline" onClick={handleLogout} className="gap-2">
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </Button>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-2 border-l border-r border-border">
                   <Switch
                     checked={isDark}
                     onCheckedChange={toggleTheme}
                   />
-
                   {isDark ? (
                     <Sun className="h-4 w-4" />
                   ) : (
                     <Moon className="h-4 w-4" />
                   )}
                 </div>
+
+                {/* Profile Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="relative h-10 w-10 rounded-full border border-border">
+                      <Avatar>
+                        {/* Add User Image URL here when available: <AvatarImage src={profile?.image_url} /> */}
+                        <AvatarFallback className="bg-primary/10 text-primary">
+                          {getInitials(profile?.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end" forceMount>
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{profile?.name || "User"}</p>
+                        <p className="text-xs leading-none text-muted-foreground">
+                          {user.email}
+                        </p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate("/dashboard?tab=settings")} className="cursor-pointer">
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Edit Profile</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:bg-destructive/10">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Log out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             ) : (
               <>
@@ -201,7 +246,6 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
                     checked={isDark}
                     onCheckedChange={toggleTheme}
                   />
-
                   {isDark ? (
                     <Sun className="h-4 w-4" />
                   ) : (
@@ -222,50 +266,71 @@ const Navbar = ({ userProfile }: { userProfile?: any }) => {
 
       {/* Mobile Navigation Menu */}
       {isMobile && (
-        <div className={`${isMenuOpen ? "block" : "hidden"} lg:hidden bg-background p-4`}>
+        <div className={`${isMenuOpen ? "block" : "hidden"} lg:hidden bg-background p-4 border-t shadow-lg`}>
           {user ? (
             <>
-              <Button variant="ghost" onClick={() => navigate("/dashboard")} className="w-full text-left mb-2">
+              {/* Mobile Profile Header */}
+              <div className="flex items-center gap-3 px-2 py-4 mb-2 border-b">
+                <Avatar>
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    {getInitials(profile?.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <span className="font-medium">{profile?.name || "User"}</span>
+                  <span className="text-xs text-muted-foreground">{user.email}</span>
+                </div>
+              </div>
+              <Button variant="ghost" onClick={() => { navigate("/dashboard"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1">
                 <LayoutDashboard className="h-4 w-4 mr-2" />
                 Dashboard
               </Button>
-              <Button variant="ghost" onClick={() => navigate("/conversations")} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={() => { navigate("/conversations"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1 relative">
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Messages
+                {unreadMessages > 0 && (
+                  <span className="ml-auto bg-primary text-primary-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {unreadMessages}
+                  </span>
+                )}
               </Button>
-              <Button variant="ghost" onClick={() => navigate("/search-messages")} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={() => { navigate("/search-messages"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1">
                 <Search className="h-4 w-4 mr-2" />
                 Search
               </Button>
-              <Button variant="ghost" onClick={() => navigate("/assistant")} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={() => { navigate("/assistant"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1">
                 <Bot className="h-4 w-4 mr-2" />
                 Assistant
               </Button>
+              <Button variant="ghost" onClick={() => { navigate("/dashboard?tab=settings"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1">
+                <Settings className="h-4 w-4 mr-2" />
+                Edit Profile
+              </Button>
               {isAdmin && (
-                <Button variant="ghost" onClick={() => navigate("/admin")} className="w-full text-left mb-2 text-primary">
+                <Button variant="ghost" onClick={() => { navigate("/admin"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-1 text-primary">
                   <User className="h-4 w-4 mr-2" />
                   Admin Panel
                 </Button>
               )}
-              <Button variant="outline" onClick={handleLogout} className="w-full text-left mb-2">
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-              <Button variant="ghost" onClick={toggleTheme} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={toggleTheme} className="w-full text-left justify-start mb-1 border-t rounded-none pt-4 mt-2">
                 {isDark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
                 {isDark ? "Light Mode" : "Dark Mode"}
+              </Button>
+              <Button variant="ghost" onClick={handleLogout} className="w-full text-left justify-start text-destructive hover:text-destructive hover:bg-destructive/10">
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
               </Button>
             </>
           ) : (
             <>
-              <Button variant="ghost" onClick={toggleTheme} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={toggleTheme} className="w-full text-left justify-start mb-2">
                 {isDark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
                 {isDark ? "Light Mode" : "Dark Mode"}
               </Button>
-              <Button variant="ghost" onClick={() => navigate("/auth")} className="w-full text-left mb-2">
+              <Button variant="ghost" onClick={() => { navigate("/auth"); setIsMenuOpen(false); }} className="w-full text-left justify-start mb-2">
                 Login
               </Button>
-              <Button onClick={() => navigate("/auth?mode=signup")} className="w-full text-left bg-primary hover:bg-primary-hover">
+              <Button onClick={() => { navigate("/auth?mode=signup"); setIsMenuOpen(false); }} className="w-full text-left justify-start bg-primary hover:bg-primary-hover">
                 Sign Up
               </Button>
             </>

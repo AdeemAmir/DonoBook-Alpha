@@ -10,11 +10,10 @@ import {
   Search, Backpack, BookOpen, BookOpenText, Gift, RefreshCw,
   Package, PencilRuler, ShoppingBag, Loader2, BadgeCheck,
   MapPin, X, SlidersHorizontal, ArrowRight, Sparkles,
-  Users, BookMarked, Heart, Star, Shield, Zap
+  Users, BookMarked, Shield
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Database } from "@/integrations/supabase/types";
-import { UserReputation } from '@/components/UserReputation';
 import { useToast } from "@/hooks/use-toast";
 
 type Book = Database['public']['Tables']['books']['Row'];
@@ -116,6 +115,9 @@ const Home = () => {
   const [booksOffset, setBooksOffset] = useState(0);
   const [itemsOffset, setItemsOffset] = useState(0);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  
+  // Added state to hold the user's profile info
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const listingsSectionRef = useRef<HTMLElement>(null);
@@ -129,9 +131,23 @@ const Home = () => {
   const [recommendedCategory, setRecommendedCategory] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check auth
+    // Check auth and load profile simultaneously
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
+      
+      // If user is logged in, fetch their name for the Welcome banner
+      if (session?.user) {
+        supabase
+          .from("profiles")
+          .select("name")
+          .eq("id", session.user.id)
+          .single()
+          .then(({ data, error }) => {
+            if (!error && data) {
+              setUserProfile(data);
+            }
+          });
+      }
     });
 
     fetchInitial();
@@ -145,9 +161,6 @@ const Home = () => {
     try {
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
       const itemSelect = `*, owner:profiles!items_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
-
-      // If there's a recommended category, prioritize it
-      const lastCategory = localStorage.getItem("donobook_last_category");
 
       const [booksResult, itemsResult] = await Promise.all([
         supabase.from("books").select(bookSelect)
@@ -441,13 +454,13 @@ const Home = () => {
 
           {/* Features */}
           <section className="container mx-auto px-4 py-16 text-center">
-                      <div className="relative container text-center">
-          <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4">
-                    <Sparkles className="h-3.5 w-3.5" /> Built for a better Future
-                  </span>
-          </motion.div>
-          </div>
+            <div className="relative container text-center">
+              <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4">
+                  <Sparkles className="h-3.5 w-3.5" /> Built for a better Future
+                </span>
+              </motion.div>
+            </div>
 
             <div className="text-center mb-10">
               <h2 className="text-2xl sm:text-3xl font-heading font-bold mb-3">Why DonoBook?</h2>
@@ -523,7 +536,9 @@ const Home = () => {
             transition={{ duration: 0.4 }}
           >
             <div>
-              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">Welcome back, user</h2>
+              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">
+                Welcome back, {userProfile?.name || "User"}
+              </h2>
               <p className="text-muted-foreground text-sm">
                 {recommendedCategory
                   ? `How about a ${getCategoryLabel(recommendedCategory)} for today?`
