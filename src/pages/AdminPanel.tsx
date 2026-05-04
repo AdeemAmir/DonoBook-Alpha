@@ -7,8 +7,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle, XCircle, CircleCheck, History, ArrowRightLeft } from "lucide-react";
+import { CheckCircle, XCircle, CircleCheck, History, ArrowRightLeft } from "lucide-react";
 import AdminComplaints from "@/components/AdminComplaints";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Copy, MoreVertical } from "lucide-react"; // Additional icons for that "image" look
 import {
   Table,
   TableBody,
@@ -48,11 +58,29 @@ type TransactionData = {
   transaction_items?: { items: { name: string, type: string } }[];
 };
 
+// 1. Transaction type based on Supabase schema
+type TransactionData = {
+  id: string;
+  status: string;
+  created_at: string;
+  sender_id: string;
+  receiver_id: string;
+  sender: { name: string };
+  receiver: { name: string };
+  transaction_books?: { books: { title: string, type: string } }[];
+  transaction_items?: { items: { name: string, type: string } }[];
+};
+
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 2. Add state for transactions
+  const [transactions, setTransactions] = useState<TransactionData[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+
 
   // 2. Add state for transactions
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
@@ -94,7 +122,11 @@ const AdminPanel = () => {
       setIsAdmin(true);
 
       // Fetch both verifications and transactions
+
+      // Fetch both verifications and transactions
       fetchVerificationRequests();
+      fetchTransactions();
+
       fetchTransactions();
 
     } catch (error: any) {
@@ -130,6 +162,40 @@ const AdminPanel = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 3. Add the function to fetch transaction history
+  const fetchTransactions = async () => {
+    try {
+      // NOTE: Adjust 'transactions', 'sender_id', and 'receiver_id' to match your actual database schema.
+      // The `!sender_id` syntax tells Supabase which foreign key to use for the join.
+      const { data, error } = await supabase
+        .from("transactions")
+        .select(`
+          id,
+          status,
+          created_at,
+          sender_id,
+          receiver_id,
+          sender:profiles!sender_id(name),
+          receiver:profiles!receiver_id(name),
+          transaction_books(books(title, type)),
+          transaction_items(items(name, type))
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setTransactions(data as any || []);
+
+    } catch (error: any) {
+      toast({
+        title: "Error fetching transactions",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTransactions(false);
     }
   };
 
@@ -226,9 +292,12 @@ const AdminPanel = () => {
             <TabsTrigger value="complaints">Complaints</TabsTrigger>
             {/* 4. Add the new Tab Trigger */}
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
+            {/* 4. Add the new Tab Trigger */}
+            <TabsTrigger value="transactions">Transactions</TabsTrigger>
           </TabsList>
 
           <TabsContent value="verifications">
+            {/* Existing Verifications Content */}
             {/* Existing Verifications Content */}
             <h2 className="text-2xl font-bold font-heading flex items-center gap-2 mb-6">
               <CircleCheck className="h-6 w-6 text-primary" />
@@ -237,10 +306,12 @@ const AdminPanel = () => {
             {loading ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">Loading verification requests...</p>
+                <p className="text-muted-foreground">Loading verification requests...</p>
               </div>
             ) : requests.length === 0 ? (
               <Card className="shadow-card">
                 <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">No verification requests found.</p>
                   <p className="text-muted-foreground">No verification requests found.</p>
                 </CardContent>
               </Card>
@@ -279,9 +350,13 @@ const AdminPanel = () => {
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-foreground">Address</p>
                           <p className="text-sm text-muted-foreground">{request.organization_address}</p>
+                          <p className="text-sm font-medium text-foreground">Address</p>
+                          <p className="text-sm text-muted-foreground">{request.organization_address}</p>
                         </div>
 
                         <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">Contact Number</p>
+                          <p className="text-sm text-muted-foreground">{request.contact_number}</p>
                           <p className="text-sm font-medium text-foreground">Contact Number</p>
                           <p className="text-sm text-muted-foreground">{request.contact_number}</p>
                         </div>
@@ -289,10 +364,13 @@ const AdminPanel = () => {
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-foreground">Business ID</p>
                           <p className="text-sm text-muted-foreground">{request.business_id}</p>
+                          <p className="text-sm font-medium text-foreground">Business ID</p>
+                          <p className="text-sm text-muted-foreground">{request.business_id}</p>
                         </div>
 
                         {request.proof_image_url && (
                           <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">Proof Document</p>
                             <p className="text-sm font-medium text-foreground">Proof Document</p>
                             <a
                               href={request.proof_image_url}
@@ -310,6 +388,7 @@ const AdminPanel = () => {
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
                           <Button
                             onClick={() => handleVerification(request.id, request.user_id, true)}
+                            onClick={() => handleVerification(request.id, request.user_id, true)}
                             className="bg-primary hover:bg-primary-hover gap-2"
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -317,6 +396,7 @@ const AdminPanel = () => {
                           </Button>
 
                           <Button
+                            onClick={() => handleVerification(request.id, request.user_id, false)}
                             onClick={() => handleVerification(request.id, request.user_id, false)}
                             variant="destructive"
                             className="gap-2"
@@ -363,9 +443,9 @@ const AdminPanel = () => {
                     <TableRow>
                       <TableHead className="w-[150px]">TRANSACTION ID</TableHead>
                       <TableHead className="w-[150px]">TRANSACTION TYPE</TableHead>
-                      <TableHead>SENDER / FROM</TableHead>
-                      <TableHead>RECEIVER / TO</TableHead>
-                      <TableHead>ITEMS</TableHead>
+                      <TableHead>RECIPIENT A</TableHead>
+                      <TableHead>RECIPIENT B</TableHead>
+                      <TableHead>PRODUCTS</TableHead>
                       <TableHead>DATE</TableHead>
                       <TableHead>STATUS</TableHead>
                       {/* <TableHead className="text-right">ACTION</TableHead> */}
@@ -401,8 +481,8 @@ const AdminPanel = () => {
                                 key={`${type}-${i}`}
                                 variant="outline"
                                 className={`capitalize border-none px-2 py-0.5 text-[10px] font-medium ${type.toLowerCase() === 'donate'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-blue-50 text-blue-700'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-blue-50 text-blue-700'
                                   }`}
                               >
                                 {type}
@@ -465,11 +545,15 @@ const AdminPanel = () => {
                           <Badge
                             variant="outline"
                             className={`capitalize px-3 py-1 rounded-full text-[11px] font-medium border-none
-                    ${tx.status.toLowerCase() === 'completed' || tx.status.toLowerCase() === 'successful'
+                    ${tx.status.toLowerCase() === 'successful'
                                 ? 'bg-green-100 text-green-700'
                                 : tx.status.toLowerCase() === 'pending'
                                   ? 'bg-yellow-100 text-yellow-900'
-                                  : 'bg-red-100 text-red-700'}
+                                  : tx.status.toLowerCase() === 'initializing'
+                                    ? 'bg-slate-100 text-slate-900'
+                                    : tx.status.toLowerCase() === 'accepted'
+                                      ? 'bg-blue-100 text-blue-900'
+                                      : 'bg-red-100 text-red-700'}
                   `}
                           >
                             {tx.status}

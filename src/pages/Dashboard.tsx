@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, BookOpen, Package, RefreshCw, Gift, Badge, MessageSquare, Settings, User } from "lucide-react";
+import { Plus, Edit, Trash2, BookOpen, Package, RefreshCw, Gift, MessageSquare, Settings, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import EditItemDialog from "@/components/EditItemDialog";
 import type { Database } from "@/integrations/supabase/types";
@@ -37,14 +37,12 @@ const Dashboard = () => {
   const [editItem, setEditItem] = useState<Book | Item | null>(null);
   const [editType, setEditType] = useState<'book' | 'item'>('book');
 
-  // To track items/books sent by owners
+  // History state
   const [givenAway, setGivenAway] = useState<any[]>([]);
   const [receivedItems, setReceivedItems] = useState<any[]>([]);
 
-  // State to control visibility
+  // Review modal state
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-
-  // State to keep track of WHICH book/item is being reviewed
   const [selectedItemForReview, setSelectedItemForReview] = useState<any>(null);
 
   useEffect(() => {
@@ -58,23 +56,16 @@ const Dashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Fetch Profile, Role, and Verification in ONE go
       const { data, error } = await supabase
         .from("profiles")
-        .select(`
-        *,
-        admins (role),
-        welfare_verifications (status)
-      `)
+        .select(`*, admins (role), welfare_verifications (status)`)
         .eq("id", user.id)
         .single();
 
       if (error) throw error;
 
-      // Flatten the data for easier use in your state
       const profileWithRole = {
         ...data,
-        // Check if it's an array or an object
         role: Array.isArray(data.admins)
           ? data.admins[0]?.role
           : data.admins?.role || 'user',
@@ -82,15 +73,11 @@ const Dashboard = () => {
 
       setUserProfile(profileWithRole);
 
-      // If they are welfare, the status is already here!
       if (data.user_type === "welfare") {
-        // Access directly if it's an object, or use [0] if it's an array
         const vData = data.welfare_verifications;
         const status = Array.isArray(vData) ? vData[0]?.status : vData?.status;
-
         setVerificationStatus(status || null);
       }
-
     } catch (error: any) {
       console.error("Error loading profile:", error.message);
     } finally {
@@ -105,20 +92,10 @@ const Dashboard = () => {
 
   const getImageUrl = (urlData: any) => {
     if (!urlData) return "/placeholder.svg";
-
-    // If it's already an array
     if (Array.isArray(urlData)) return urlData[0];
-
-    // If it's a stringified array (common with JSONB columns)
     if (typeof urlData === 'string' && urlData.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(urlData);
-        return parsed[0];
-      } catch (e) {
-        return urlData;
-      }
+      try { return JSON.parse(urlData)[0]; } catch { return urlData; }
     }
-
     return urlData;
   };
 
@@ -127,98 +104,142 @@ const Dashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const [booksRes, itemsRes, givenBooksRes, givenItemsRes, receivedBooksRaw, receivedItemsRaw] = await Promise.all([
-        // 1. My active listings
+      const [
+        booksRes,
+        itemsRes,
+        givenBooksRes,
+        givenItemsRes,
+        receivedBooksAsSender,
+        receivedBooksAsReceiver,
+        receivedItemsAsSender,
+        receivedItemsAsReceiver,
+      ] = await Promise.all([
+        // 1. My active listings (exclude claimed)
         supabase.from("books").select("*").eq("owner_id", user.id).neq("status", "claimed"),
         supabase.from("items").select("*").eq("owner_id", user.id).neq("status", "claimed"),
 
-        // 2. Given away (I own, status=claimed) — same query as before, already works
+        // 2. Given away (I own, status = claimed)
         supabase.from("books")
-          .select(`*, transaction_books!inner(transactions!inner(status, receiver_id, receiver:profiles!receiver_id(name)))`)
+          .select(`*, transaction_books!inner(transactions!inner(status, sender_id, receiver_id, sender:profiles!sender_id(name), receiver:profiles!receiver_id(name)))`)
           .eq("owner_id", user.id)
           .eq("status", "claimed"),
 
         supabase.from("items")
-          .select(`*, transaction_items!inner(transactions!inner(status, receiver_id, receiver:profiles!receiver_id(name)))`)
+          .select(`*, transaction_items!inner(transactions!inner(status, sender_id, receiver_id, sender:profiles!sender_id(name), receiver:profiles!receiver_id(name)))`)
           .eq("owner_id", user.id)
           .eq("status", "claimed"),
 
-        // 3. Received — fetch all accepted transactions where I'm the receiver,
-        //    then join back to books
+        // ─── Received items (4 queries, 2 per type) ─────────────────────────────
+        // RLS on transactions may only expose rows where the user is receiver_id.
+        // To guarantee User A (sender) also sees items they're receiving in an
+        // exchange, we run two separate queries per type — one as sender, one as
+        // receiver — and merge them. The owner_id !== user.id filter then keeps
+        // only items that truly came TO the user.
         supabase.from("transactions")
           .select(`
-            id,
-            receiver_id,
-            status,
-            transaction_books!inner(
-              books!inner(
-                *,
-                owner:profiles!books_owner_id_fkey(name),
-                reviews(id)
-              )
-            )
+            id, status, sender_id, receiver_id,
+            transaction_books(books(*, owner:profiles!books_owner_id_fkey(name), reviews(id)))
           `)
-          .eq("receiver_id", user.id)
-          .eq("status", "successful"),
+          .eq("sender_id", user.id)
+          .in("status", ["accepted", "successful"]),
 
         supabase.from("transactions")
           .select(`
-            id,
-            receiver_id,
-            status,
-            transaction_items!inner(
-              items!inner(
-                *,
-                owner:profiles!items_owner_id_fkey(name),
-                reviews(id)
-              )
-            )
+            id, status, sender_id, receiver_id,
+            transaction_books(books(*, owner:profiles!books_owner_id_fkey(name), reviews(id)))
           `)
           .eq("receiver_id", user.id)
-          .eq("status", "successful"),
+          .in("status", ["accepted", "successful"]),
+
+        supabase.from("transactions")
+          .select(`
+            id, status, sender_id, receiver_id,
+            transaction_items(items(*, owner:profiles!items_owner_id_fkey(name), reviews(id)))
+          `)
+          .eq("sender_id", user.id)
+          .in("status", ["accepted", "successful"]),
+
+        supabase.from("transactions")
+          .select(`
+            id, status, sender_id, receiver_id,
+            transaction_items(items(*, owner:profiles!items_owner_id_fkey(name), reviews(id)))
+          `)
+          .eq("receiver_id", user.id)
+          .in("status", ["accepted", "successful"]),
       ]);
 
       if (booksRes.error) throw booksRes.error;
       if (itemsRes.error) throw itemsRes.error;
 
-      // 1. Update processedGivenBooks
+      // Process given-away books/items
       const processedGivenBooks = (givenBooksRes.data || []).map((book: any) => {
         const winningTx = book.transaction_books?.find(
-          (tb: any) =>
-            tb.transactions?.status === 'accepted' || tb.transactions?.status === 'successful'
+          (tb: any) => tb.transactions?.status === 'accepted' || tb.transactions?.status === 'successful'
         );
-        return {
-          ...book,
-          receiver: { name: winningTx?.transactions?.receiver?.name || "Unknown" }
-        };
+        const tx = winningTx?.transactions;
+        // The receiver is whoever is NOT the current user
+        const receiverName = tx
+          ? (tx.receiver_id === user.id ? tx.sender?.name : tx.receiver?.name) ?? "Unknown"
+          : "Unknown";
+        return { ...book, receiver: { name: receiverName } };
       });
 
-      // 2. Update processedGivenItems
       const processedGivenItems = (givenItemsRes.data || []).map((item: any) => {
         const winningTx = item.transaction_items?.find(
-          (ti: any) =>
-            ti.transactions?.status === 'accepted' || ti.transactions?.status === 'successful'
+          (ti: any) => ti.transactions?.status === 'accepted' || ti.transactions?.status === 'successful'
         );
-        return {
-          ...item,
-          receiver: { name: winningTx?.transactions?.receiver?.name || "Unknown" }
-        };
+        const tx = winningTx?.transactions;
+        const receiverName = tx
+          ? (tx.receiver_id === user.id ? tx.sender?.name : tx.receiver?.name) ?? "Unknown"
+          : "Unknown";
+        return { ...item, receiver: { name: receiverName } };
       });
 
-      // Flatten received books/items out of the transactions wrapper
-      const receivedBooks = (receivedBooksRaw.data || []).flatMap((tx: any) =>
-        (tx.transaction_books || []).map((tb: any) => tb.books)
+      // Merge sender + receiver results, deduplicate by transaction id,
+      // then keep only items NOT owned by the current user.
+      // Deduplication is needed because in a donate the user may appear as
+      // both sender (of the item) and receiver (of the transaction record),
+      // which would cause the same item to appear twice without it.
+      const allBookTxs = [
+        ...(receivedBooksAsSender.data || []),
+        ...(receivedBooksAsReceiver.data || []),
+      ].filter((tx: any, idx: number, arr: any[]) =>
+        arr.findIndex((t: any) => t.id === tx.id) === idx   // deduplicate
+      );
+
+      const allItemTxs = [
+        ...(receivedItemsAsSender.data || []),
+        ...(receivedItemsAsReceiver.data || []),
+      ].filter((tx: any, idx: number, arr: any[]) =>
+        arr.findIndex((t: any) => t.id === tx.id) === idx   // deduplicate
+      );
+
+      const receivedBooks = allBookTxs.flatMap((tx: any) =>
+        (tx.transaction_books || [])
+          .map((tb: any) => tb.books)
+          .filter((book: any) => book && book.owner_id !== user.id)
+          .map((book: any) => ({
+            ...book,
+            _transaction_id: tx.id,
+            _transaction_status: tx.status,
+          }))
       ).filter(Boolean);
 
-      const receivedItems = (receivedItemsRaw.data || []).flatMap((tx: any) =>
-        (tx.transaction_items || []).map((ti: any) => ti.items)
+      const receivedItemsList = allItemTxs.flatMap((tx: any) =>
+        (tx.transaction_items || [])
+          .map((ti: any) => ti.items)
+          .filter((item: any) => item && item.owner_id !== user.id)
+          .map((item: any) => ({
+            ...item,
+            _transaction_id: tx.id,
+            _transaction_status: tx.status,
+          }))
       ).filter(Boolean);
 
       setBooks(booksRes.data || []);
       setItems(itemsRes.data || []);
       setGivenAway([...processedGivenBooks, ...processedGivenItems]);
-      setReceivedItems([...receivedBooks, ...receivedItems]);
-
+      setReceivedItems([...receivedBooks, ...receivedItemsList]);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to load";
       toast({ title: "Error", description: message, variant: "destructive" });
@@ -232,11 +253,8 @@ const Dashboard = () => {
       if (imageUrls) {
         let urlsToDelete: string[] = [];
         if (typeof imageUrls === 'string') {
-          try {
-            urlsToDelete = imageUrls.startsWith('[') ? JSON.parse(imageUrls) : [imageUrls];
-          } catch (e) {
-            urlsToDelete = [imageUrls];
-          }
+          try { urlsToDelete = imageUrls.startsWith('[') ? JSON.parse(imageUrls) : [imageUrls]; }
+          catch { urlsToDelete = [imageUrls]; }
         } else if (Array.isArray(imageUrls)) {
           urlsToDelete = imageUrls;
         }
@@ -246,18 +264,12 @@ const Dashboard = () => {
             const urlObj = new URL(url);
             const pathWithParams = urlObj.pathname.split('/book-images/')[1];
             return decodeURIComponent(pathWithParams.split('?')[0]);
-          } catch (e) {
-            return null;
-          }
+          } catch { return null; }
         }).filter(Boolean) as string[];
 
         if (filePaths.length > 0) {
-          // verify session before attempting delete
-          const { data: { session } } = await supabase.auth.getSession();
-
-          const { data, error: storageError } = await supabase.storage
-            .from("book-images")
-            .remove(filePaths);
+          await supabase.auth.getSession();
+          await supabase.storage.from("book-images").remove(filePaths);
         }
       }
 
@@ -276,11 +288,8 @@ const Dashboard = () => {
       if (imageUrls) {
         let urlsToDelete: string[] = [];
         if (typeof imageUrls === 'string') {
-          try {
-            urlsToDelete = imageUrls.startsWith('[') ? JSON.parse(imageUrls) : [imageUrls];
-          } catch (e) {
-            urlsToDelete = [imageUrls];
-          }
+          try { urlsToDelete = imageUrls.startsWith('[') ? JSON.parse(imageUrls) : [imageUrls]; }
+          catch { urlsToDelete = [imageUrls]; }
         } else if (Array.isArray(imageUrls)) {
           urlsToDelete = imageUrls;
         }
@@ -290,16 +299,11 @@ const Dashboard = () => {
             const urlObj = new URL(url);
             const pathWithParams = urlObj.pathname.split('/item-images/')[1];
             return decodeURIComponent(pathWithParams.split('?')[0]);
-          } catch (e) {
-            return null;
-          }
+          } catch { return null; }
         }).filter(Boolean) as string[];
 
         if (filePaths.length > 0) {
-          const { error: storageError } = await supabase.storage
-            .from("item-images")
-            .remove(filePaths);
-
+          await supabase.storage.from("item-images").remove(filePaths);
         }
       }
 
@@ -320,68 +324,53 @@ const Dashboard = () => {
     setEditOpen(true);
   };
 
-  const handleConfirmHandover = async (item: any, table: 'books' | 'items') => {
-    const { error: listingError } = await supabase
-      .from(table)
-      .update({
-        handover_confirmed: true,
-        status: 'claimed',
-        is_available: false
-      })
-      .eq('id', item.id);
+  /**
+   * handleConfirmHandover
+   *
+   * The DB trigger `sync_item_statuses_with_transaction` handles ALL status
+   * updates on books/items automatically. So all we need to do here is update
+   * the transaction status to 'successful'. The trigger will then:
+   *   - Set books/items status = 'claimed'
+   *   - Set books/items handover_confirmed = true
+   *   - Set books/items is_available = false
+   */
+  const handleConfirmHandover = async (item: any) => {
+    try {
+      const txId = item._transaction_id;
+      if (!txId) {
+        toast({ title: "Error", description: "Transaction not found for this item.", variant: "destructive" });
+        return;
+      }
 
-    if (listingError) throw listingError;
-
-    // 2. Find the Transaction ID via the mapping table
-    // If it's a book, look in 'transaction_books'. If an item, 'transaction_items'.
-    const mappingTable = table === 'books' ? 'transaction_books' : 'transaction_items';
-    const foreignKeyColumn = table === 'books' ? 'book_id' : 'item_id';
-
-    const { data: mappingData, error: mappingError } = await supabase
-      .from(mappingTable)
-      .select('transaction_id')
-      .eq(foreignKeyColumn, item.id)
-      .maybeSingle(); // Gets the specific transaction linked to this item
-
-    if (mappingError) throw mappingError;
-
-    // 3. Update the Transaction Status using the ID we just found
-    if (mappingData?.transaction_id) {
       const { error: txUpdateError } = await supabase
         .from("transactions")
         .update({ status: "successful" })
-        .eq('id', mappingData.transaction_id);
+        .eq("id", txId);
 
       if (txUpdateError) throw txUpdateError;
-    } else {
-      console.warn("No linked transaction found for this item.");
+
+      toast({
+        title: "Handover Confirmed!",
+        description: "Thanks for confirming. Please leave a review for the owner!",
+      });
+
+      // Refresh list so handover_confirmed = true is reflected,
+      // then open the review modal
+      await fetchUserListings();
+
+      setSelectedItemForReview(item);
+      setIsReviewModalOpen(true);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
-
-    toast({
-      title: "Handover Confirmed!",
-      description: "Thanks for confirming. Please leave a review for the owner!"
-    });
-
-    // THIS TRIGGERS THE MODAL
-    setSelectedItemForReview(item);
-    setIsReviewModalOpen(true);
-
-    // Refresh the list so the "Confirm" button turns into "Leave Review"
-    await fetchUserListings();
   };
 
-  // To resubmit verification request after rejection
   const handleResubmit = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (e.g., max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload a file smaller than 5MB.",
-        variant: "destructive",
-      });
+      toast({ title: "File too large", description: "Please upload a file smaller than 5MB.", variant: "destructive" });
       return;
     }
 
@@ -393,45 +382,23 @@ const Dashboard = () => {
       const fileExt = file.name.split('.').pop();
       const filePath = `${user.id}/resubmit_${Date.now()}.${fileExt}`;
 
-      // 1. Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('verification-proofs')
         .upload(filePath, file, { upsert: true });
-
       if (uploadError) throw uploadError;
 
-      // 2. Get the new Public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('verification-proofs')
-        .getPublicUrl(filePath);
+      const { data: { publicUrl } } = supabase.storage.from('verification-proofs').getPublicUrl(filePath);
 
-      // 3. Update the existing verification record
-      // We reset status to 'pending' so admin sees it again
       const { error: updateError } = await supabase
         .from("welfare_verifications")
-        .update({
-          proof_image_url: publicUrl,
-          status: 'pending',
-          created_at: new Date().toISOString() // Optional: move to top of admin queue
-        })
+        .update({ proof_image_url: publicUrl, status: 'pending', created_at: new Date().toISOString() })
         .eq("user_id", user.id);
-
       if (updateError) throw updateError;
 
-      toast({
-        title: "Documents Resubmitted",
-        description: "Your verification request has been sent back for review.",
-      });
-
-      // Refresh the profile and status states
+      toast({ title: "Documents Resubmitted", description: "Your verification request has been sent back for review." });
       await fetchUserProfile();
-
     } catch (error: any) {
-      toast({
-        title: "Resubmit failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Resubmit failed", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -439,16 +406,9 @@ const Dashboard = () => {
 
   const getCategoryLabel = (category: string) => {
     const labels: Record<string, string> = {
-      textbook: "Textbook",
-      story_book: "Story Book",
-      reading_book: "Reading Book",
-      other_book: "Other Book",
-      bag: "Bag",
-      water_bottle: "Water Bottle",
-      pencil_box: "Pencil Box",
-      lunchbox: "Lunchbox",
-      stationery: "Stationery",
-      other: "Other",
+      textbook: "Textbook", story_book: "Story Book", reading_book: "Reading Book",
+      other_book: "Other Book", bag: "Bag", water_bottle: "Water Bottle",
+      pencil_box: "Pencil Box", lunchbox: "Lunchbox", stationery: "Stationery", other: "Other",
     };
     return labels[category] || category;
   };
@@ -466,10 +426,13 @@ const Dashboard = () => {
       </div>
     );
   }
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="container mx-auto px-4 py-8">
+
+        {/* Welfare verification banner */}
         {userProfile?.user_type === "welfare" && verificationStatus !== "approved" && (
           <Card className="shadow-card mb-8 border-amber-500/50 bg-amber-50/50">
             <CardContent className="py-6">
@@ -488,8 +451,7 @@ const Dashboard = () => {
                     {verificationStatus === "rejected" && "Your verification request was rejected. Please contact support."}
                   </p>
                 </div>
-                {/* Resubmit Button Logic */}
-                {(verificationStatus === "rejected") && (
+                {verificationStatus === "rejected" && (
                   <div className="flex flex-col items-center gap-2">
                     <Button className="relative bg-primary hover:bg-primary-hover overflow-hidden">
                       {loading ? "Uploading..." : "Upload Document"}
@@ -516,134 +478,119 @@ const Dashboard = () => {
             className="bg-primary hover:bg-primary-hover gap-2"
             disabled={isUploadDisabled}
           >
-            <Plus className="h-4 w-4" />
-            Upload Item
+            <Plus className="h-4 w-4" /> Upload Item
           </Button>
         </div>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading your inventory...</p>
-          </div>
-        ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-6">
-              <TabsTrigger value="books" className="gap-2">
-                <BookOpen className="h-4 w-4" /> Books ({books.length})
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="books" className="gap-2">
+              <BookOpen className="h-4 w-4" /> Books ({books.length})
+            </TabsTrigger>
+            <TabsTrigger value="items" className="gap-2">
+              <Package className="h-4 w-4" /> Items ({items.length})
+            </TabsTrigger>
+            <TabsTrigger value="history" className="gap-2">
+              <RefreshCw className="h-4 w-4" /> History ({givenAway.length + receivedItems.length})
+            </TabsTrigger>
+            {userProfile?.role !== "admin" && (
+              <TabsTrigger value="support" className="gap-2">
+                <MessageSquare className="h-4 w-4" /> Support
               </TabsTrigger>
-              <TabsTrigger value="items" className="gap-2">
-                <Package className="h-4 w-4" /> Items ({items.length})
-              </TabsTrigger>
-              <TabsTrigger value="history" className="gap-2">
-                <RefreshCw className="h-4 w-4" /> History ({givenAway.length + receivedItems.length})
-              </TabsTrigger>
-              {userProfile?.role !== "admin" &&
-                <TabsTrigger value="support" className="gap-2">
-                  <MessageSquare className="h-4 w-4" /> Support
-                </TabsTrigger>}
-              <TabsTrigger value="settings" className="gap-2">
-                <Settings className="h-4 w-4" /> Settings
-              </TabsTrigger>
-            </TabsList>
+            )}
+            <TabsTrigger value="settings" className="gap-2">
+              <Settings className="h-4 w-4" /> Settings
+            </TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="books">
-              {books.length === 0 ? (
-                <Card className="shadow-card">
-                  <CardContent className="py-12 text-center">
-                    <p className="text-muted-foreground mb-4">No books uploaded yet.</p>
-                    <Button disabled={isUploadDisabled} onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover">
-                      Upload Your First Book
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {books.map((book) => (
-                    <Card key={book.id} className="shadow-card hover:shadow-soft transition-smooth">
-                      <CardHeader>
-                        <img src={getImageUrl(book.image_url)} className={`w-full h-48 object-cover rounded-lg transition-all ${book.status !== "available" ? "grayscale opacity-60" : ""}`} />
-                        <CardTitle className="font-heading">{book.title}</CardTitle>
-                        <CardDescription>
-                          {book.grade && `Grade: ${book.grade} • `}{getCategoryLabel(book.category)} • {book.condition}
-                        </CardDescription>
-                        <div className="mt-2">
-                          <StatusBadge status={book.status} />
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/book/${(book as any).slug || book.id}`)} className="flex-1">
-                            View
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => openEdit(book, 'book')}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteBook(book.id, book.image_url)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+          {/* ── Books Tab ── */}
+          <TabsContent value="books">
+            {books.length === 0 ? (
+              <Card className="shadow-card">
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground mb-4">No books uploaded yet.</p>
+                  <Button disabled={isUploadDisabled} onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover">
+                    Upload Your First Book
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {books.map((book) => (
+                  <Card key={book.id} className="shadow-card hover:shadow-soft transition-smooth">
+                    <CardHeader>
+                      <img src={getImageUrl(book.image_url)} className={`w-full h-48 object-cover rounded-lg transition-all ${book.status !== "available" ? "grayscale opacity-60" : ""}`} />
+                      <CardTitle className="font-heading">{book.title}</CardTitle>
+                      <CardDescription>
+                        {book.grade && `Grade: ${book.grade} • `}{getCategoryLabel(book.category)} • {book.condition}
+                      </CardDescription>
+                      <div className="mt-2"><StatusBadge status={book.status} /></div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/book/${(book as any).slug || book.id}`)} className="flex-1">View</Button>
+                        <Button variant="outline" size="sm" onClick={() => openEdit(book, 'book')}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteBook(book.id, book.image_url)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
-            <TabsContent value="items">
-              {items.length === 0 ? (
-                <Card className="shadow-card">
-                  <CardContent className="py-12 text-center">
-                    <p className="text-muted-foreground mb-4">No items uploaded yet.</p>
-                    <Button disabled={isUploadDisabled} onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover">
-                      Upload Your First Item
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {items.map((item) => (
-                    <Card key={item.id} className="shadow-card hover:shadow-soft transition-smooth">
-                      <CardHeader>
-                        <img src={getImageUrl(item.image_url)} className={`w-full h-48 object-cover rounded-lg transition-all ${item.status !== "available" ? "grayscale opacity-60" : ""}`} />
-                        <CardTitle className="font-heading">{item.name}</CardTitle>
-                        <CardDescription>
-                          {getCategoryLabel(item.category)} • {item.condition} • {item.type}
-                        </CardDescription>
-                        <div className="mt-2">
-                          <StatusBadge status={item.status} />
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/item/${(item as any).slug || item.id}`)} className="flex-1">
-                            View
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => openEdit(item, 'item')}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteItem(item.id, item.image_url)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-            <TabsContent value="history">
-              <div className="space-y-8">
-                <section>
-                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <Gift className="h-5 w-5 text-primary" /> Given Away
-                  </h2>
+          {/* ── Items Tab ── */}
+          <TabsContent value="items">
+            {items.length === 0 ? (
+              <Card className="shadow-card">
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground mb-4">No items uploaded yet.</p>
+                  <Button disabled={isUploadDisabled} onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover">
+                    Upload Your First Item
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {items.map((item) => (
+                  <Card key={item.id} className="shadow-card hover:shadow-soft transition-smooth">
+                    <CardHeader>
+                      <img src={getImageUrl(item.image_url)} className={`w-full h-48 object-cover rounded-lg transition-all ${item.status !== "available" ? "grayscale opacity-60" : ""}`} />
+                      <CardTitle className="font-heading">{item.name}</CardTitle>
+                      <CardDescription>{getCategoryLabel(item.category)} • {item.condition} • {item.type}</CardDescription>
+                      <div className="mt-2"><StatusBadge status={item.status} /></div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/item/${(item as any).slug || item.id}`)} className="flex-1">View</Button>
+                        <Button variant="outline" size="sm" onClick={() => openEdit(item, 'item')}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteItem(item.id, item.image_url)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── History Tab ── */}
+          <TabsContent value="history">
+            <div className="space-y-8">
+
+              {/* Given Away */}
+              <section>
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Gift className="h-5 w-5 text-primary" /> Given Away
+                </h2>
+                {givenAway.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nothing given away yet.</p>
+                ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {givenAway.map((item) => (
                       <Card key={item.id} className="opacity-80 grayscale-[0.3]">
                         <CardHeader className="p-4">
                           <img src={getImageUrl(item.image_url)} className="h-32 w-full object-cover rounded-md mb-2" />
                           <CardTitle className="text-sm">{item.title || item.name}</CardTitle>
-                          {/* Conditional Status Display */}
                           <div className="flex items-center gap-2">
                             {item.handover_confirmed ? (
                               <StatusBadge status="claimed" />
@@ -654,30 +601,39 @@ const Dashboard = () => {
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground mt-2 font-medium">
-                            🎁 {item.handover_confirmed ? "Given to:" : "Sent to:"} <span className="text-foreground">{item.receiver?.name || "Unknown"}</span>
+                            🎁 {item.handover_confirmed ? "Given to:" : "Sent to:"}{" "}
+                            <span className="text-foreground">{item.receiver?.name || "Unknown"}</span>
                           </p>
                         </CardHeader>
                       </Card>
                     ))}
                   </div>
-                </section>
+                )}
+              </section>
 
-                <section>
-                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <Package className="h-5 w-5 text-green-600" /> Received
-                  </h2>
+              {/* Received */}
+              <section>
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Package className="h-5 w-5 text-green-600" /> Received
+                </h2>
+                {receivedItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nothing received yet.</p>
+                ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {receivedItems.map((item) => {
-                      // Check if a review already exists for this specific item
+                      // The trigger sets handover_confirmed = true when status = 'successful'.
+                      // We use this — NOT _transaction_status — as the source of truth for UI.
+                      const handoverDone = item.handover_confirmed === true;
                       const alreadyReviewed = item.reviews && item.reviews.length > 0;
+
                       return (
-                        <Card key={item.id} className="border-green-200 bg-green-50/30">
+                        <Card key={`${item.id}-${item._transaction_id}`} className="border-green-200 bg-green-50/30">
                           <CardHeader className="p-4">
                             <img src={getImageUrl(item.image_url)} className="h-32 w-full object-cover rounded-md mb-2" />
                             <CardTitle className="text-sm">{item.title || item.name}</CardTitle>
-                            <div className="flex items-center gap-2">
 
-                              {item.handover_confirmed ? (
+                            <div className="flex items-center gap-2">
+                              {handoverDone ? (
                                 <StatusBadge status="claimed" />
                               ) : (
                                 <span className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
@@ -685,81 +641,87 @@ const Dashboard = () => {
                                 </span>
                               )}
                             </div>
+
                             <div className="mt-4 space-y-2">
-                              {!item.handover_confirmed ? (
+                              {!handoverDone ? (
+                                // Transaction is 'accepted' but not yet confirmed — show button
                                 <Button
                                   size="sm"
                                   className="w-full bg-green-600 hover:bg-green-700"
-                                  onClick={() => handleConfirmHandover(item, item.title ? 'books' : 'items')}
+                                  onClick={() => handleConfirmHandover(item)}
                                 >
                                   Confirm I Received This
                                 </Button>
                               ) : !alreadyReviewed ? (
+                                // Confirmed but no review yet
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="w-full border-primary text-primary hover:bg-primary/10"
                                   onClick={() => {
-                                    setSelectedItemForReview(item); // Ensure this is set
-                                    setIsReviewModalOpen(true);   // Then open
+                                    setSelectedItemForReview(item);
+                                    setIsReviewModalOpen(true);
                                   }}
                                 >
                                   Leave a Review
                                 </Button>
                               ) : (
+                                // Review submitted
                                 <div className="text-center py-2 px-3 bg-green-100 rounded-md text-green-700 text-xs font-medium flex items-center justify-center gap-1">
-                                  Review Submitted
+                                  ✓ Review Submitted
                                 </div>
                               )}
                             </div>
+
                             <p className="text-xs text-muted-foreground mt-1 font-medium">
-                              📩 {item.handover_confirmed ? "Received from: " : "Delivering by: "} <span className="text-foreground">{item.owner?.name || "Unknown"}</span>
+                              📩 {handoverDone ? "Received from: " : "Delivering by: "}
+                              <span className="text-foreground">{item.owner?.name || "Unknown"}</span>
                             </p>
                           </CardHeader>
                         </Card>
-                      )
+                      );
                     })}
                   </div>
-                </section>
-              </div>
-            </TabsContent>
-            {/* ONLY RENDER SUPPORT CONTENT IF USER IS NOT AN ADMIN */}
-            {userProfile?.role !== "admin" && (
-              <TabsContent value="support">
-                <ComplaintsTab />
-              </TabsContent>
-            )}
-            <TabsContent value="settings">
-              <div className="max-w-4xl mx-auto">
-                <EditProfile
-                  profile={userProfile}
-                  onSave={fetchUserProfile}
-                />
+                )}
+              </section>
+            </div>
+          </TabsContent>
 
-                <Card className="mt-6 border-slate-200 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <User className="h-4 w-4" /> Account Details
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-xs text-muted-foreground space-y-1">
-                    <p>Member since: {new Date(userProfile?.created_at).toLocaleDateString()}</p>
-                    <p>Account Type: <span className="capitalize font-semibold text-primary">{userProfile?.user_type}</span></p>
-                    <p>User ID: <span className="font-mono">{userProfile?.id}</span></p>
-                  </CardContent>
-                </Card>
-              </div>
+          {/* ── Support Tab ── */}
+          {userProfile?.role !== "admin" && (
+            <TabsContent value="support">
+              <ComplaintsTab />
             </TabsContent>
-          </Tabs>
-        )}
-        {/* THE MODAL COMPONENT */}
+          )}
+
+          {/* ── Settings Tab ── */}
+          <TabsContent value="settings">
+            <div className="max-w-4xl mx-auto">
+              <EditProfile profile={userProfile} onSave={fetchUserProfile} />
+              <Card className="mt-6 border-slate-200 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <User className="h-4 w-4" /> Account Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs text-muted-foreground space-y-1">
+                  <p>Member since: {new Date(userProfile?.created_at).toLocaleDateString()}</p>
+                  <p>Account Type: <span className="capitalize font-semibold text-primary">{userProfile?.user_type}</span></p>
+                  <p>User ID: <span className="font-mono">{userProfile?.id}</span></p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Review Modal */}
         {selectedItemForReview && (
           <ReviewModal
             open={isReviewModalOpen}
             onOpenChange={setIsReviewModalOpen}
             targetItem={selectedItemForReview}
             currentUserId={userProfile?.id}
-            onSuccess={fetchUserListings} // Refresh UI after review is saved
+            onSuccess={fetchUserListings}
           />
         )}
       </div>
