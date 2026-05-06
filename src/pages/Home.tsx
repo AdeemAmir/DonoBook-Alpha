@@ -13,11 +13,7 @@ import {
   Users, BookMarked, Shield
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Database } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
-
-type Book = Database['public']['Tables']['books']['Row'];
-type Item = Database['public']['Tables']['items']['Row'];
 
 type ListingItem = {
   id: string;
@@ -96,17 +92,12 @@ const FEATURES = [
   },
 ];
 
-const STATS = [
-  { value: "500+", label: "Books Shared" },
-  { value: "200+", label: "Students Helped" },
-  { value: "50+", label: "Active Donors" },
-];
-
 const Home = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [books, setBooks] = useState<Book[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  
+  // Unified listings state prevents layout jumping
+  const [listings, setListings] = useState<ListingItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -116,7 +107,6 @@ const Home = () => {
   const [itemsOffset, setItemsOffset] = useState(0);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   
-  // Added state to hold the user's profile info
   const [userProfile, setUserProfile] = useState<any>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -126,61 +116,63 @@ const Home = () => {
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [locationQuery, setLocationQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-
-  // Recommendation state — track recently viewed categories
   const [recommendedCategory, setRecommendedCategory] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check auth and load profile simultaneously
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
-      
-      // If user is logged in, fetch their name for the Welcome banner
       if (session?.user) {
-        supabase
-          .from("profiles")
-          .select("name")
-          .eq("id", session.user.id)
-          .single()
-          .then(({ data, error }) => {
-            if (!error && data) {
-              setUserProfile(data);
-            }
-          });
+        supabase.from("profiles").select("name").eq("id", session.user.id).single()
+          .then(({ data, error }) => { if (!error && data) setUserProfile(data); });
       }
     });
 
-    fetchInitial();
-
-    // Load recommended category from localStorage
     const lastViewed = localStorage.getItem("donobook_last_category");
     if (lastViewed) setRecommendedCategory(lastViewed);
+
+    fetchInitial(lastViewed);
   }, []);
 
-  const fetchInitial = async () => {
+  // Helper to format, sort, and prioritize a single batch of items
+  const formatAndSortBatch = (bData: any[], iData: any[], recCat: string | null): ListingItem[] => {
+    const bList: ListingItem[] = bData.map(book => ({
+      id: book.id, slug: book.slug, name: book.title, type: book.type, condition: book.condition,
+      description: book.description, image_url: book.image_url, created_at: book.created_at,
+      itemType: 'book', grade: book.grade, category: book.category, owner: book.owner
+    }));
+    const iList: ListingItem[] = iData.map(item => ({
+      id: item.id, slug: item.slug, name: item.name, type: item.type, condition: item.condition,
+      description: item.description, image_url: item.image_url, created_at: item.created_at,
+      itemType: 'item', category: item.category, owner: item.owner
+    }));
+
+    let combined = [...bList, ...iList];
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (recCat) {
+      combined = [
+        ...combined.filter(i => (recCat === "books" && i.itemType === "book") || (recCat === "items" && i.itemType === "item") || i.category === recCat),
+        ...combined.filter(i => !(recCat === "books" && i.itemType === "book") && !(recCat === "items" && i.itemType === "item") && i.category !== recCat),
+      ];
+    }
+    return combined;
+  };
+
+  const fetchInitial = async (recCat: string | null) => {
     try {
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
       const itemSelect = `*, owner:profiles!items_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
 
       const [booksResult, itemsResult] = await Promise.all([
-        supabase.from("books").select(bookSelect)
-          .order("created_at", { ascending: false })
-          .range(0, PAGE_SIZE - 1)
-          .eq('is_available', true),
-        supabase.from("items").select(itemSelect)
-          .order("created_at", { ascending: false })
-          .range(0, PAGE_SIZE - 1)
-          .eq('is_available', true),
+        supabase.from("books").select(bookSelect).order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1).eq('is_available', true),
+        supabase.from("items").select(itemSelect).order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1).eq('is_available', true),
       ]);
-
-      if (booksResult.error) throw booksResult.error;
-      if (itemsResult.error) throw itemsResult.error;
 
       const bData = booksResult.data || [];
       const iData = itemsResult.data || [];
 
-      setBooks(bData as any);
-      setItems(iData as any);
+      setListings(formatAndSortBatch(bData, iData, recCat));
+      
       setBooksOffset(bData.length);
       setItemsOffset(iData.length);
       setHasMoreBooks(bData.length === PAGE_SIZE);
@@ -204,29 +196,34 @@ const Home = () => {
 
       if (hasMoreBooks) {
         const { data } = await supabase.from("books").select(bookSelect)
-          .order("created_at", { ascending: false })
-          .range(booksOffset, booksOffset + PAGE_SIZE - 1)
-          .eq('is_available', true);
+          .order("created_at", { ascending: false }).range(booksOffset, booksOffset + PAGE_SIZE - 1).eq('is_available', true);
         newBooks = data || [];
+        setBooksOffset(prev => prev + newBooks.length);
+        if (newBooks.length < PAGE_SIZE) setHasMoreBooks(false);
       }
       if (hasMoreItems) {
         const { data } = await supabase.from("items").select(itemSelect)
-          .order("created_at", { ascending: false })
-          .range(itemsOffset, itemsOffset + PAGE_SIZE - 1)
-          .eq('is_available', true);
+          .order("created_at", { ascending: false }).range(itemsOffset, itemsOffset + PAGE_SIZE - 1).eq('is_available', true);
         newItems = data || [];
+        setItemsOffset(prev => prev + newItems.length);
+        if (newItems.length < PAGE_SIZE) setHasMoreItems(false);
       }
 
-      if (newBooks.length > 0) { setBooks(prev => [...prev, ...newBooks]); setBooksOffset(prev => prev + newBooks.length); }
-      if (newBooks.length < PAGE_SIZE) setHasMoreBooks(false);
-      if (newItems.length > 0) { setItems(prev => [...prev, ...newItems]); setItemsOffset(prev => prev + newItems.length); }
-      if (newItems.length < PAGE_SIZE) setHasMoreItems(false);
+      const batch = formatAndSortBatch(newBooks, newItems, recommendedCategory);
+      
+      // Deduplicate before appending to prevent React key errors / CSS Grid breaking
+      setListings(prev => {
+        const existingIds = new Set(prev.map(i => i.id));
+        const uniqueNew = batch.filter(i => !existingIds.has(i.id));
+        return [...prev, ...uniqueNew];
+      });
+
     } catch (error) {
       console.error("Error loading more:", error);
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMoreBooks, hasMoreItems, booksOffset, itemsOffset]);
+  }, [loadingMore, hasMoreBooks, hasMoreItems, booksOffset, itemsOffset, recommendedCategory]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -240,17 +237,12 @@ const Home = () => {
   }, [loadMore]);
 
   const toggleCategory = (value: string) => {
-    setActiveCategories(prev =>
-      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
-    );
-    // Save to recommendation storage
+    setActiveCategories(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
     localStorage.setItem("donobook_last_category", value);
   };
 
   const toggleType = (value: string) => {
-    setActiveTypes(prev =>
-      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
-    );
+    setActiveTypes(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
   };
 
   const clearAllFilters = () => {
@@ -260,49 +252,19 @@ const Home = () => {
     setSearchQuery("");
   };
 
-  const activeFilterCount = activeCategories.length + activeTypes.length + (locationQuery ? 1 : 0);
-
-  const getCombinedListings = (): ListingItem[] => {
-    const bookListings: ListingItem[] = books.map(book => ({
-      id: book.id, slug: (book as any).slug, name: book.title, type: book.type, condition: book.condition,
-      description: book.description, image_url: book.image_url, created_at: book.created_at,
-      itemType: 'book', grade: book.grade, category: book.category,
-      owner: (book as any).owner
-    }));
-    const itemListings: ListingItem[] = items.map(item => ({
-      id: item.id, slug: (item as any).slug, name: item.name, type: item.type, condition: item.condition,
-      description: item.description, image_url: item.image_url, created_at: item.created_at,
-      itemType: 'item', category: item.category,
-      owner: (item as any).owner
-    }));
-
-    let combined = [...bookListings, ...itemListings];
-
-    // Sort: recommended category first, then by date
-    if (recommendedCategory) {
-      combined = [
-        ...combined.filter(i =>
-          (recommendedCategory === "books" && i.itemType === "book") ||
-          (recommendedCategory === "items" && i.itemType === "item") ||
-          i.category === recommendedCategory
-        ),
-        ...combined.filter(i =>
-          !(recommendedCategory === "books" && i.itemType === "book") &&
-          !(recommendedCategory === "items" && i.itemType === "item") &&
-          i.category !== recommendedCategory
-        ),
-      ];
-    } else {
-      combined = combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
-    return combined;
+  const clearRecommendation = () => {
+    setRecommendedCategory(null);
+    localStorage.removeItem("donobook_last_category");
+    // Re-sort the current state purely by date so the recommendation bubble naturally vanishes
+    setListings(prev => [...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
   };
 
+  const activeFilterCount = activeCategories.length + activeTypes.length + (locationQuery ? 1 : 0);
+
   const getFilteredListings = () => {
-    let listings = getCombinedListings();
+    let filtered = listings;
     if (activeCategories.length > 0) {
-      listings = listings.filter(item => {
+      filtered = filtered.filter(item => {
         return activeCategories.some(cat => {
           if (cat === "books") return item.itemType === 'book';
           if (cat === "items") return item.itemType === 'item';
@@ -311,18 +273,11 @@ const Home = () => {
         });
       });
     }
-    if (activeTypes.length > 0) {
-      listings = listings.filter(item => activeTypes.includes(item.type));
-    }
-    if (locationQuery.trim()) {
-      const loc = locationQuery.toLowerCase();
-      listings = listings.filter(item => item.owner?.address?.toLowerCase().includes(loc));
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      listings = listings.filter(item => item.name.toLowerCase().includes(q));
-    }
-    return listings;
+    if (activeTypes.length > 0) filtered = filtered.filter(item => activeTypes.includes(item.type));
+    if (locationQuery.trim()) filtered = filtered.filter(item => item.owner?.address?.toLowerCase().includes(locationQuery.toLowerCase()));
+    if (searchQuery.trim()) filtered = filtered.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    return filtered;
   };
 
   const filteredListings = getFilteredListings();
@@ -366,7 +321,6 @@ const Home = () => {
   const handleItemClick = (item: ListingItem) => {
     const urlParam = item.slug || item.id;
     navigate(item.itemType === 'book' ? `/book/${urlParam}` : `/item/${urlParam}`);
-    // Save preference for recommendations
     localStorage.setItem("donobook_last_category", item.category);
   };
 
@@ -385,7 +339,7 @@ const Home = () => {
   const filterKey = [...activeCategories, ...activeTypes, locationQuery, searchQuery].join("|");
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background transition-colors">
       <Navbar />
 
       {/* ══════════════════════════════════════════
@@ -393,70 +347,38 @@ const Home = () => {
           ══════════════════════════════════════════ */}
       {isLoggedIn === false && (
         <>
-          {/* Hero */}
           <section className="relative overflow-hidden">
             <div className="absolute inset-0 gradient-hero opacity-60" />
             <div className="relative container mx-auto px-4 py-20 sm:py-15 text-center">
               <motion.div
                 className="max-w-5xl mx-auto space-y-6"
-                initial="hidden"
-                animate="visible"
-                variants={staggerContainer}
+                initial="hidden" animate="visible" variants={staggerContainer}
               >
-                <motion.h1
-                  variants={fadeUp}
-                  transition={{ duration: 0.6 }}
-                  className="text-4xl sm:text-6xl font-heading font-bold leading-tight"
-                >
+                <motion.h1 variants={fadeUp} transition={{ duration: 0.6 }} className="text-4xl sm:text-6xl font-heading font-bold leading-tight">
                   <span className="gradient-text">Share & Exchange</span>
                   <br />Build Futures.
                 </motion.h1>
-                <motion.p
-                  variants={fadeUp}
-                  transition={{ duration: 0.6, delay: 0.1 }}
-                  className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
-                >
+                <motion.p variants={fadeUp} transition={{ duration: 0.6, delay: 0.1 }} className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
                   Beyond just transactions - Donobook is an ecosystem for school essentials. <br />
                   Be it a sturdy backpack, or much-needed textbooks students rely on, <br />we connect students so valuable resources never go to waste. <br />
                   Give what you can. Feed the thirst for knowledge.
                 </motion.p>
-                <motion.div
-                  variants={fadeUp}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                  className="flex flex-col sm:flex-row gap-3 justify-center pt-2"
-                >
-                  <Button size="lg" onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover shadow-glow gap-2 h-12 px-8 text-base font-semibold btn-glow">
+                <motion.div variants={fadeUp} transition={{ duration: 0.5, delay: 0.2 }} className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                  <Button size="lg" onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover shadow-glow gap-2 h-12 px-8 text-base font-semibold btn-glow text-white">
                     Get Started Free <ArrowRight className="h-4 w-4" />
                   </Button>
                   <Button size="lg" variant="outline" onClick={() => listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })} className="h-12 px-8 text-base">
                     Browse Listings
                   </Button>
                 </motion.div>
-                
               </motion.div>
             </div>
-            
           </section>
 
-          {/* Stats */}
-          {/* <section className="border-y border-border bg-card/50">
-            <div className="container mx-auto px-4 py-8">
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16">
-                {STATS.map((s) => (
-                  <div key={s.label} className="text-center">
-                    <p className="text-3xl font-heading font-bold gradient-text">{s.value}</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section> */}
-
-          {/* Features */}
           <section className="container mx-auto px-4 py-16 text-center">
             <div className="relative container text-center">
               <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4 dark:text-primary-foreground">
                   <Sparkles className="h-3.5 w-3.5" /> Built for a better Future
                 </span>
               </motion.div>
@@ -475,9 +397,7 @@ const Home = () => {
                   <Card className="h-full hover:shadow-soft transition-smooth border-border hover:-translate-y-1">
                     <CardHeader>
                       <div className="flex justify-center mb-4">
-                        <div
-                          className={`h-14 w-14 rounded-xl flex items-center justify-center ${f.color}`}
-                        >
+                        <div className={`h-14 w-14 rounded-xl flex items-center justify-center ${f.color}`}>
                           <f.icon className="h-7 w-7" strokeWidth={2} />
                         </div>
                       </div>
@@ -490,7 +410,6 @@ const Home = () => {
             </motion.div>
           </section>
 
-          {/* Categories overview */}
           <section className="container mx-auto px-4 pb-8">
             <div className="text-center mb-8">
               <h2 className="text-2xl font-heading font-bold mb-2">What's Available</h2>
@@ -531,12 +450,10 @@ const Home = () => {
         <section className="container mx-auto px-4 py-8">
           <motion.div
             className="rounded-2xl bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 border border-primary/10 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           >
             <div>
-              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1">
+              <h2 className="text-xl sm:text-2xl font-heading font-bold mb-1 text-foreground">
                 Welcome back, {userProfile?.name || "User"}
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -546,10 +463,10 @@ const Home = () => {
               </p>
             </div>
             <div className="flex gap-3">
-              <Button onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow">
+              <Button onClick={() => navigate("/upload")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow text-white">
                 <Gift className="h-4 w-4" /> Donate Item
               </Button>
-              <Button variant="outline" onClick={() => navigate("/assistant")} className="gap-2">
+              <Button variant="outline" onClick={() => navigate("/assistant")} className="gap-2 border-border">
                 <Sparkles className="h-4 w-4" /> AI Help
               </Button>
             </div>
@@ -570,7 +487,7 @@ const Home = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyPress}
-              className="pl-12 h-12 text-base shadow-card focus-visible:ring-primary border-border"
+              className="pl-12 h-12 text-base shadow-sm focus-visible:ring-primary border-border bg-card text-foreground"
             />
             {searchQuery && (
               <button
@@ -590,7 +507,7 @@ const Home = () => {
       <section ref={listingsSectionRef} className="container mx-auto px-4 pb-16 scroll-mt-20">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold">
+            <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground">
               {recommendedCategory && activeCategories.length === 0 && !searchQuery
                 ? `Recommended for You`
                 : "Available Listings"}
@@ -599,11 +516,7 @@ const Home = () => {
               <p className="text-sm text-muted-foreground mt-0.5">{filteredListings.length} listings</p>
             )}
           </div>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => setShowFilters(v => !v)}
-          >
+          <Button variant="outline" className="gap-2 border-border" onClick={() => setShowFilters(v => !v)}>
             <SlidersHorizontal className="h-4 w-4" />
             <span className="hidden sm:inline">Filters</span>
             {activeFilterCount > 0 && (
@@ -618,13 +531,10 @@ const Home = () => {
         <AnimatePresence>
           {showFilters && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <Card className="mb-6 border-primary/20 shadow-card">
+              <Card className="mb-6 border-primary/20 shadow-sm">
                 <CardContent className="pt-5 pb-4 space-y-5">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Location</p>
@@ -634,7 +544,7 @@ const Home = () => {
                         placeholder="e.g. Karachi, Gulshan…"
                         value={locationQuery}
                         onChange={(e) => setLocationQuery(e.target.value)}
-                        className="pl-9 h-9 text-sm"
+                        className="pl-9 h-9 text-sm bg-background border-border"
                       />
                       {locationQuery && (
                         <button onClick={() => setLocationQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -651,22 +561,20 @@ const Home = () => {
                         const active = activeCategories.includes(value);
                         return (
                           <button
-                            key={value}
-                            onClick={() => toggleCategory(value)}
+                            key={value} onClick={() => toggleCategory(value)}
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs sm:text-sm border transition-all ${active
                               ? "bg-primary text-primary-foreground border-primary"
                               : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
                               }`}
                           >
-                            <Icon className="h-3.5 w-3.5" />
-                            {label}
+                            <Icon className="h-3.5 w-3.5" /> {label}
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between border-t pt-4">
+                  <div className="flex items-center justify-between border-t border-border pt-4">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Listing Type</p>
                       <div className="flex gap-2">
@@ -674,8 +582,7 @@ const Home = () => {
                           const active = activeTypes.includes(value);
                           return (
                             <button
-                              key={value}
-                              onClick={() => toggleType(value)}
+                              key={value} onClick={() => toggleType(value)}
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all ${active
                                 ? value === "donate"
                                   ? "bg-emerald-600 text-white border-emerald-600"
@@ -683,8 +590,7 @@ const Home = () => {
                                 : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
                                 }`}
                             >
-                              <Icon className="h-3.5 w-3.5" />
-                              {label}
+                              <Icon className="h-3.5 w-3.5" /> {label}
                             </button>
                           );
                         })}
@@ -709,7 +615,7 @@ const Home = () => {
             <p className="text-muted-foreground">Loading listings…</p>
           </div>
         ) : filteredListings.length === 0 ? (
-          <Card className="shadow-card">
+          <Card className="shadow-sm border-border">
             <CardContent className="py-20 text-center">
               <Package className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
               <h3 className="text-xl font-bold mb-2">No listings found</h3>
@@ -719,8 +625,8 @@ const Home = () => {
                   : "No items in this category yet. Be the first to donate!"}
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-3">
-                <Button variant="outline" onClick={clearAllFilters}>Reset Filters</Button>
-                <Button onClick={() => navigate(isLoggedIn ? "/upload" : "/auth")} className="bg-primary">
+                <Button variant="outline" onClick={clearAllFilters} className="border-border">Reset Filters</Button>
+                <Button onClick={() => navigate(isLoggedIn ? "/upload" : "/auth")} className="bg-primary text-white">
                   {isLoggedIn ? "Upload an Item" : "Join & Donate"}
                 </Button>
               </div>
@@ -731,7 +637,7 @@ const Home = () => {
             {recommendedCategory && activeCategories.length === 0 && !searchQuery && (
               <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <span>Personalized based on your browsing | <button onClick={() => setRecommendedCategory(null)} className="text-primary underline underline-offset-2">show all</button></span>
+                <span>Personalized based on your browsing | <button onClick={clearRecommendation} className="text-primary hover:text-primary-hover underline underline-offset-2">show all</button></span>
               </div>
             )}
             <motion.div
@@ -741,7 +647,7 @@ const Home = () => {
               {filteredListings.map((item) => (
                 <motion.div key={`${item.itemType}-${item.id}`} variants={fadeUp} transition={{ duration: 0.35 }}>
                   <Card
-                    className="shadow-card hover:shadow-soft transition-smooth cursor-pointer group h-full flex flex-col border-border hover:-translate-y-1"
+                    className="shadow-sm hover:shadow-soft transition-smooth cursor-pointer group h-full flex flex-col border-border hover:-translate-y-1"
                     onClick={() => handleItemClick(item)}
                   >
                     <div className="relative overflow-hidden rounded-t-lg">
@@ -757,18 +663,17 @@ const Home = () => {
                         {item.name}
                       </h3>
                       <div className="flex gap-1.5 flex-wrap mb-2 items-center">
-                        {/* Moved Donate/Exchange badge next to the category tags */}
                         <Badge
                           variant="outline"
                           className={`text-[10px] gap-1 px-1.5 py-0 font-bold border-transparent ${getTypeColor(item.type)}`}
                         >
                           {getTypeIcon(item.type)}<span className="capitalize">{item.type}</span>
                         </Badge>
-                        <Badge variant="secondary" className="text-[10px] font-medium">
+                        <Badge variant="secondary" className="text-[10px] font-medium shadow-none">
                           {getCategoryLabel(item.category)}
                         </Badge>
                         {item.grade && (
-                          <Badge variant="outline" className="text-[10px]">{item.grade}</Badge>
+                          <Badge variant="outline" className="text-[10px] shadow-none border-border">{item.grade}</Badge>
                         )}
                       </div>
 
@@ -778,7 +683,7 @@ const Home = () => {
                         </p>
                       )}
 
-                      <div className="mt-auto flex items-center gap-1.5">
+                      <div className="mt-auto flex items-center gap-1.5 pt-2 border-t border-border/50">
                         {item.owner?.verified && (
                           <BadgeCheck className="h-3.5 w-3.5 text-primary shrink-0" />
                         )}
@@ -815,7 +720,7 @@ const Home = () => {
               <p className="text-muted-foreground text-sm mb-5 max-w-md mx-auto">
                 Join DonoBook to donate books, exchange items, and help students in your community.
               </p>
-              <Button onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow">
+              <Button onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover gap-2 btn-glow text-white">
                 Create Free Account <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
