@@ -748,6 +748,7 @@ const Home = () => {
                       <img
                         src={getThumbnail(item.image_url)}
                         alt={item.name}
+                        loading="lazy"
                         className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute top-2 left-2">
