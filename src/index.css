@@ -71,60 +71,59 @@
   }
 
   .dark {
-    /* ── Core backgrounds (Midnight Indigo - bridges 219 Blue & 248 Purple) ── */
-    --background:            235 18% 9%;
-    --foreground:            230 20% 88%;
-    --card:                  235 18% 12%;
-    --card-foreground:       230 20% 88%;
-    --popover:               235 18% 12%;
-    --popover-foreground:    230 20% 88%;
+    /* ── Core backgrounds ─────────────────────────────────── */
+    --background:            244 22% 9%;
+    --foreground:            248 30% 94%;
+    --card:                  244 22% 12%;
+    --card-foreground:       248 30% 94%;
+    --popover:               244 22% 13%;
+    --popover-foreground:    248 30% 94%;
 
     /* ── Brand purple-blue primary ───────────────────────── */
-    --primary:               248 70% 68%;
+    --primary:               248 72% 66%;
     --primary-foreground:    0   0%  100%;
-    --primary-hover:         248 70% 74%;
-    --primary-light:         248 30% 22%;
-    --primary-glow:          248 70% 68% / 0.2;
+    --primary-hover:         248 72% 72%;
+    --primary-light:         248 40% 20%;
+    --primary-glow:          248 72% 66% / 0.3;
 
     /* ── Blue secondary ──────────────────────────────────── */
-    --secondary:             219 65% 66%;
+    --secondary:             219 70% 68%;
     --secondary-foreground:  0   0%  100%;
-    --secondary-hover:       219 65% 72%;
+    --secondary-hover:       219 70% 74%;
 
     /* ── Deep violet accent ──────────────────────────────── */
-    --accent:                262 60% 62%;
+    --accent:                262 68% 60%;
     --accent-foreground:     0   0%  100%;
 
     /* ── Supporting ─────────────────────────────────────── */
-    --muted:                 235 15% 16%;
-    --muted-foreground:      235 15% 65%;
-    --destructive:           0   55%  55%;
+    --muted:                 244 20% 18%;
+    --muted-foreground:      248 15% 62%;
+    --destructive:           0   62%  50%;
     --destructive-foreground:0   0%  100%;
-    --border:                235 15% 20%;
-    --input:                 235 15% 18%;
-    --ring:                  248 70% 68%;
+    --border:                244 20% 22%;
+    --input:                 244 20% 20%;
+    --ring:                  248 72% 66%;
 
     /* ── Gradients ───────────────────────────────────────── */
-    --gradient-primary:      linear-gradient(135deg, hsl(248 55% 58%), hsl(219 60% 60%));
-    /* Added a very subtle ambient brand glow to the hero background */
-    --gradient-hero:         linear-gradient(160deg, hsl(235 18% 9%), hsl(248 15% 12%), hsl(219 15% 10%));
-    --gradient-card:         linear-gradient(180deg, hsl(235 18% 14%), hsl(235 18% 11%));
-    --gradient-brand:        linear-gradient(135deg, hsl(248 65% 62%), hsl(219 65% 64%));
+    --gradient-primary:      linear-gradient(135deg, hsl(248 60% 55%), hsl(219 65% 58%));
+    --gradient-hero:         linear-gradient(160deg, hsl(244 22% 11%), hsl(248 22% 13%), hsl(244 22% 11%));
+    --gradient-card:         linear-gradient(180deg, hsl(244 22% 13%), hsl(244 22% 11%));
+    --gradient-brand:        linear-gradient(135deg, hsl(248 70% 60%), hsl(219 70% 65%));
 
     /* ── Shadows ─────────────────────────────────────────── */
-    --shadow-soft:           0 4px 20px -4px hsl(0 0% 0% / 0.40);
-    --shadow-card:           0 2px 12px -2px hsl(0 0% 0% / 0.30);
-    --shadow-glow:           0 0 32px -4px hsl(248 70% 68% / 0.15);
+    --shadow-soft:           0 4px 20px -4px hsl(248 50% 10% / 0.50);
+    --shadow-card:           0 2px 12px -2px hsl(248 40% 5% / 0.40);
+    --shadow-glow:           0 0 32px -4px hsl(248 72% 66% / 0.25);
 
     /* ── Sidebar ─────────────────────────────────────────── */
-    --sidebar-background:    235 18% 10%;
-    --sidebar-foreground:    230 20% 85%;
-    --sidebar-primary:       248 70% 68%;
+    --sidebar-background:    244 22% 11%;
+    --sidebar-foreground:    248 20% 85%;
+    --sidebar-primary:       248 72% 66%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent:        235 15% 16%;
-    --sidebar-accent-foreground: 230 20% 85%;
-    --sidebar-border:        235 15% 20%;
-    --sidebar-ring:          248 70% 68%;
+    --sidebar-accent:        244 20% 18%;
+    --sidebar-accent-foreground: 248 20% 85%;
+    --sidebar-border:        244 20% 22%;
+    --sidebar-ring:          248 72% 66%;
   }
 }
 
