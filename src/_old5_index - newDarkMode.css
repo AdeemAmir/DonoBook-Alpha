@@ -71,13 +71,13 @@
   }
 
   .dark {
-    /* ── Core backgrounds (Midnight Indigo - bridges 219 Blue & 248 Purple) ── */
-    --background:            235 18% 9%;
-    --foreground:            230 20% 88%;
-    --card:                  235 18% 12%;
-    --card-foreground:       230 20% 88%;
-    --popover:               235 18% 12%;
-    --popover-foreground:    230 20% 88%;
+    /* ── Core backgrounds (Lenient Slate/Indigo) ──────────── */
+    --background:            225 15% 10%;
+    --foreground:            225 20% 88%;
+    --card:                  225 15% 13%;
+    --card-foreground:       225 20% 88%;
+    --popover:               225 15% 13%;
+    --popover-foreground:    225 20% 88%;
 
     /* ── Brand purple-blue primary ───────────────────────── */
     --primary:               248 70% 68%;
@@ -96,19 +96,18 @@
     --accent-foreground:     0   0%  100%;
 
     /* ── Supporting ─────────────────────────────────────── */
-    --muted:                 235 15% 16%;
-    --muted-foreground:      235 15% 65%;
+    --muted:                 225 15% 18%;
+    --muted-foreground:      225 15% 65%;
     --destructive:           0   55%  55%;
     --destructive-foreground:0   0%  100%;
-    --border:                235 15% 20%;
-    --input:                 235 15% 18%;
+    --border:                225 15% 22%;
+    --input:                 225 15% 20%;
     --ring:                  248 70% 68%;
 
     /* ── Gradients ───────────────────────────────────────── */
     --gradient-primary:      linear-gradient(135deg, hsl(248 55% 58%), hsl(219 60% 60%));
-    /* Added a very subtle ambient brand glow to the hero background */
-    --gradient-hero:         linear-gradient(160deg, hsl(235 18% 9%), hsl(248 15% 12%), hsl(219 15% 10%));
-    --gradient-card:         linear-gradient(180deg, hsl(235 18% 14%), hsl(235 18% 11%));
+    --gradient-hero:         linear-gradient(160deg, hsl(225 15% 10%), hsl(225 15% 12%), hsl(225 15% 10%));
+    --gradient-card:         linear-gradient(180deg, hsl(225 15% 15%), hsl(225 15% 12%));
     --gradient-brand:        linear-gradient(135deg, hsl(248 65% 62%), hsl(219 65% 64%));
 
     /* ── Shadows ─────────────────────────────────────────── */
@@ -117,13 +116,13 @@
     --shadow-glow:           0 0 32px -4px hsl(248 70% 68% / 0.15);
 
     /* ── Sidebar ─────────────────────────────────────────── */
-    --sidebar-background:    235 18% 10%;
-    --sidebar-foreground:    230 20% 85%;
+    --sidebar-background:    225 15% 11%;
+    --sidebar-foreground:    225 20% 85%;
     --sidebar-primary:       248 70% 68%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent:        235 15% 16%;
-    --sidebar-accent-foreground: 230 20% 85%;
-    --sidebar-border:        235 15% 20%;
+    --sidebar-accent:        225 15% 18%;
+    --sidebar-accent-foreground: 225 20% 85%;
+    --sidebar-border:        225 15% 22%;
     --sidebar-ring:          248 70% 68%;
   }
 }
