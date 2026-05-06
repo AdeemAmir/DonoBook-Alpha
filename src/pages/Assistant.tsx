@@ -206,22 +206,22 @@ const Assistant = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background transition-colors">
       <Navbar />
 
       <div className="container mx-auto px-4 py-8">
-        <Card className="shadow-card max-w-4xl mx-auto border-none shadow-lg">
-          <CardHeader className="border-b bg-card rounded-t-xl">
+        <Card className="shadow-card max-w-4xl mx-auto border-border dark:border-slate-800 shadow-lg dark:bg-slate-900 transition-colors">
+          <CardHeader className="border-b border-border dark:border-slate-800 bg-card dark:bg-slate-900/50 rounded-t-xl transition-colors">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-full">
-                  <Bot className="h-8 w-8 text-primary" />
+                <div className="p-2 bg-primary/10 dark:bg-primary/20 rounded-full">
+                  <Bot className="h-8 w-8 text-primary dark:text-primary-foreground" />
                 </div>
                 <div>
-                  <CardTitle className="font-heading text-foreground">
+                  <CardTitle className="font-heading text-foreground dark:text-slate-100">
                     DonoBook Assistant
                   </CardTitle>
-                  <CardDescription className="text-muted-foreground">
+                  <CardDescription className="text-muted-foreground dark:text-slate-400">
                     AI Guide for Transactions & Safety
                   </CardDescription>
                 </div>
@@ -231,7 +231,7 @@ const Assistant = () => {
                 variant="ghost"
                 size="sm"
                 onClick={handleClearHistory}
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 dark:hover:bg-rose-950/30 transition-colors"
                 title="Clear chat history"
               >
                 <Trash2 className="h-4 w-4" />
@@ -240,7 +240,8 @@ const Assistant = () => {
           </CardHeader>
 
           <CardContent className="p-0">
-            <div className="h-[500px] overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+            {/* Chat Area Background */}
+            <div className="h-[500px] overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-background/50 transition-colors">
               {messages.map((message, index) => (
                 <div
                   key={index}
@@ -248,11 +249,12 @@ const Assistant = () => {
                     message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
+                  {/* Message Bubbles */}
                   <div
-                    className={`max-w-[85%] px-5 py-3 rounded-2xl shadow-sm ${
+                    className={`max-w-[85%] px-5 py-3 rounded-2xl shadow-sm transition-colors ${
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-tr-none"
-                        : "bg-muted text-foreground border border-slate-100 rounded-tl-none"
+                        ? "bg-primary text-primary-foreground dark:bg-primary/60 dark:text-white rounded-tr-none"
+                        : "bg-muted text-foreground border border-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 rounded-tl-none"
                     }`}
                   >
                     <div className="text-sm leading-relaxed">
@@ -261,7 +263,9 @@ const Assistant = () => {
                     {message.timestamp && (
                       <p
                         className={`text-[10px] mt-2 opacity-60 ${
-                          message.role === "user" ? "text-right" : "text-left"
+                          message.role === "user" 
+                            ? "text-right text-white/70" 
+                            : "text-left dark:text-slate-400"
                         }`}
                       >
                         {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -271,13 +275,14 @@ const Assistant = () => {
                 </div>
               ))}
 
+              {/* Loading Indicator Bubble */}
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-white border border-slate-100 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm">
+                  <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm transition-colors">
                     <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce"></span>
-                      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                      <span className="w-1.5 h-1.5 bg-primary/40 dark:bg-primary/60 rounded-full animate-bounce"></span>
+                      <span className="w-1.5 h-1.5 bg-primary/40 dark:bg-primary/60 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                      <span className="w-1.5 h-1.5 bg-primary/40 dark:bg-primary/60 rounded-full animate-bounce [animation-delay:0.4s]"></span>
                     </div>
                   </div>
                 </div>
@@ -286,18 +291,19 @@ const Assistant = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={handleSubmit} className="border-t p-4 flex gap-3 bg-white rounded-b-xl">
+            {/* Input Form Area */}
+            <form onSubmit={handleSubmit} className="border-t border-border dark:border-slate-800 p-4 flex gap-3 bg-white dark:bg-slate-900 rounded-b-xl transition-colors">
               <Input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about exchange, donation, or safety..."
-                className="flex-1 bg-slate-50 border-none focus-visible:ring-1 focus-visible:ring-primary"
+                className="flex-1 bg-slate-50 dark:bg-slate-800 dark:text-slate-200 border-none focus-visible:ring-1 focus-visible:ring-primary"
                 disabled={loading}
               />
               <Button
                 type="submit"
-                className="bg-primary hover:bg-primary/90 rounded-full px-6"
+                className="bg-primary hover:bg-primary/90 dark:bg-primary/80 dark:hover:bg-primary text-white rounded-full px-6 transition-colors"
                 disabled={loading || !input.trim()}
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
