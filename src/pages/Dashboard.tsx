@@ -478,7 +478,7 @@ const Dashboard = () => {
             className="bg-primary hover:bg-primary-hover gap-2"
             disabled={isUploadDisabled}
           >
-            <Plus className="h-4 w-4" /> Upload Item
+            <Plus className="h-4 w-4" /> Upload Product
           </Button>
         </div>
 
