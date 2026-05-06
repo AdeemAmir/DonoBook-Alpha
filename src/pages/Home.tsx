@@ -749,22 +749,21 @@ const Home = () => {
                         src={getThumbnail(item.image_url)}
                         alt={item.name}
                         loading="lazy"
-                        className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="w-full h-44 object-cover bg-muted/20 group-hover:scale-105 transition-transform duration-500"
                       />
-                      <div className="absolute top-2 left-2">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs gap-1 font-medium shadow-sm ${getTypeColor(item.type)}`}
-                        >
-                          {getTypeIcon(item.type)}<span className="capitalize">{item.type}</span>
-                        </Badge>
-                      </div>
                     </div>
                     <CardContent className="p-4 flex-1 flex flex-col">
                       <h3 className="font-heading font-semibold text-base mb-1.5 group-hover:text-primary transition-smooth line-clamp-2 leading-snug">
                         {item.name}
                       </h3>
-                      <div className="flex gap-1.5 flex-wrap mb-2">
+                      <div className="flex gap-1.5 flex-wrap mb-2 items-center">
+                        {/* Moved Donate/Exchange badge next to the category tags */}
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] gap-1 px-1.5 py-0 font-bold border-transparent ${getTypeColor(item.type)}`}
+                        >
+                          {getTypeIcon(item.type)}<span className="capitalize">{item.type}</span>
+                        </Badge>
                         <Badge variant="secondary" className="text-[10px] font-medium">
                           {getCategoryLabel(item.category)}
                         </Badge>
