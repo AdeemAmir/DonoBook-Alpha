@@ -439,7 +439,7 @@ const Home = () => {
           </section>
 
           {/* Stats */}
-          <section className="border-y border-border bg-card/50">
+          {/* <section className="border-y border-border bg-card/50">
             <div className="container mx-auto px-4 py-8">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16">
                 {STATS.map((s) => (
@@ -450,7 +450,7 @@ const Home = () => {
                 ))}
               </div>
             </div>
-          </section>
+          </section> */}
 
           {/* Features */}
           <section className="container mx-auto px-4 py-16 text-center">
