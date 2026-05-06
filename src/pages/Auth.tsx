@@ -378,14 +378,14 @@ const Auth = () => {
               >
                 {loading ? "Loading..." : isSignup ? "Sign Up" : "Login"}
               </Button>
-              <Button
+              {/* <Button
                 onClick={handleGoogleLogin}
                 variant="outline"
                 className="w-full flex gap-2"
               >
                 <img src="/google-icon.svg" alt="Google" className="w-5 h-5" />
                 Continue with Google
-              </Button>
+              </Button> */}
             </form>
             <div className="mt-4 text-center text-sm">
               <button
