@@ -590,18 +590,18 @@ const Dashboard = () => {
                       <Card key={item.id} className="opacity-80 grayscale-[0.3]">
                         <CardHeader className="p-4">
                           <img src={getImageUrl(item.image_url)} className="h-32 w-full object-cover rounded-md mb-2" />
-                          <CardTitle className="text-sm">{item.title || item.name}</CardTitle>
+                          <CardTitle className="text-sm text-foreground">{item.title || item.name}</CardTitle>
                           <div className="flex items-center gap-2">
                             {item.handover_confirmed ? (
                               <StatusBadge status="claimed" />
                             ) : (
-                              <span className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+                              <span className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 rounded-full border border-amber-200 dark:border-amber-900/50">
                                 Awaiting Confirmation
                               </span>
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground mt-2 font-medium">
-                            🎁 {item.handover_confirmed ? "Given to:" : "Sent to:"}{" "}
+                            {item.handover_confirmed ? "Given to:" : "Sent to:"}{" "}
                             <span className="text-foreground">{item.receiver?.name || "Unknown"}</span>
                           </p>
                         </CardHeader>
@@ -614,29 +614,27 @@ const Dashboard = () => {
               {/* Received */}
               <section>
                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                  <Package className="h-5 w-5 text-green-600" /> Received
+                  <Package className="h-5 w-5 text-emerald-600 dark:text-emerald-500" /> Received
                 </h2>
                 {receivedItems.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nothing received yet.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {receivedItems.map((item) => {
-                      // The trigger sets handover_confirmed = true when status = 'successful'.
-                      // We use this — NOT _transaction_status — as the source of truth for UI.
                       const handoverDone = item.handover_confirmed === true;
                       const alreadyReviewed = item.reviews && item.reviews.length > 0;
 
                       return (
-                        <Card key={`${item.id}-${item._transaction_id}`} className="border-green-200 bg-green-50/30">
+                        <Card key={`${item.id}-${item._transaction_id}`} className="border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/30 dark:bg-emerald-950/20 shadow-sm">
                           <CardHeader className="p-4">
                             <img src={getImageUrl(item.image_url)} className="h-32 w-full object-cover rounded-md mb-2" />
-                            <CardTitle className="text-sm">{item.title || item.name}</CardTitle>
+                            <CardTitle className="text-sm text-foreground">{item.title || item.name}</CardTitle>
 
                             <div className="flex items-center gap-2">
                               {handoverDone ? (
                                 <StatusBadge status="claimed" />
                               ) : (
-                                <span className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+                                <span className="text-[10px] font-bold uppercase px-2 py-1 bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 rounded-full border border-amber-200 dark:border-amber-900/50">
                                   Awaiting Confirmation
                                 </span>
                               )}
@@ -644,10 +642,10 @@ const Dashboard = () => {
 
                             <div className="mt-4 space-y-2">
                               {!handoverDone ? (
-                                // Transaction is 'accepted' but not yet confirmed — show button
+                                // Transaction is 'accepted' but not yet confirmed
                                 <Button
                                   size="sm"
-                                  className="w-full bg-green-600 hover:bg-green-700"
+                                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-700 dark:hover:bg-emerald-600"
                                   onClick={() => handleConfirmHandover(item)}
                                 >
                                   Confirm I Received This
@@ -657,7 +655,7 @@ const Dashboard = () => {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="w-full border-primary text-primary hover:bg-primary/10"
+                                  className="w-full border-primary text-primary hover:bg-primary/10 dark:hover:bg-primary/20"
                                   onClick={() => {
                                     setSelectedItemForReview(item);
                                     setIsReviewModalOpen(true);
@@ -667,14 +665,14 @@ const Dashboard = () => {
                                 </Button>
                               ) : (
                                 // Review submitted
-                                <div className="text-center py-2 px-3 bg-green-100 rounded-md text-green-700 text-xs font-medium flex items-center justify-center gap-1">
+                                <div className="text-center py-2 px-3 bg-emerald-100 rounded-md text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-xs font-medium flex items-center justify-center gap-1">
                                   ✓ Review Submitted
                                 </div>
                               )}
                             </div>
 
                             <p className="text-xs text-muted-foreground mt-1 font-medium">
-                              📩 {handoverDone ? "Received from: " : "Delivering by: "}
+                              {handoverDone ? "Received from: " : "Delivering by: "}
                               <span className="text-foreground">{item.owner?.name || "Unknown"}</span>
                             </p>
                           </CardHeader>
