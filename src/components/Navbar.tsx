@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { BookOpen, User, LogOut, MessageSquare, Bot, Search, Home, Menu, X, Sun, Moon, LayoutDashboard, Settings } from "lucide-react";
+import { BookOpen, User, LogOut, MessageSquare, Bot, Search, Home, Menu, X, Sun, Moon, LayoutDashboard, Settings, PackageCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
@@ -18,6 +18,16 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
   const navigate = useNavigate();
@@ -30,6 +40,9 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
 
   const { isDark, toggleTheme } = useTheme();
 
+  const [pendingHandoverCount, setPendingHandoverCount] = useState(0);
+  const [showHandoverModal, setShowHandoverModal] = useState(false);
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -37,6 +50,7 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
       if (session?.user) {
         checkAdminRole(session.user.id);
         subscribeToUnreadMessages(session.user.id);
+        fetchPendingHandoverCount(session.user.id);
         if (!propUserProfile) fetchUserProfile(session.user.id);
       }
     });
@@ -47,6 +61,7 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
       if (session?.user) {
         checkAdminRole(session.user.id);
         subscribeToUnreadMessages(session.user.id);
+        fetchPendingHandoverCount(session.user.id);
         if (!propUserProfile) fetchUserProfile(session.user.id);
       } else {
         setIsAdmin(false);
@@ -91,6 +106,7 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
           event: '*',
           schema: 'public',
           table: 'user_messages',
+          filter: `receiver_id=eq.${userId}`
         },
         () => {
           fetchUnreadCount(userId);
@@ -134,6 +150,36 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
     return name ? name.charAt(0).toUpperCase() : <User className="h-4 w-4" />;
   };
 
+  const fetchPendingHandoverCount = async (userId: string) => {
+    // Check both books and items where user is the receiver
+    const { count, error } = await supabase
+      .from("transactions")
+      .select('id', { count: "exact", head: true }) // head: true makes it faster if you only need the count
+      .eq("receiver_id", userId)
+      .eq("status", "accepted");
+    
+    const totalPending = count || 0;
+    setPendingHandoverCount(totalPending);
+
+    // Popup Logic: Check if there are pending items AND if not snoozed
+    if (totalPending > 0) {
+      const snoozeDate = localStorage.getItem('snooze_handover_popup');
+      const isSnoozed = snoozeDate && new Date(snoozeDate) > new Date();
+
+      if (!isSnoozed) {
+        setShowHandoverModal(true);
+      }
+    }
+  };
+
+  // Handle Snooze
+  const handleSnooze = () => {
+    const snoozeUntil = new Date();
+    snoozeUntil.setDate(snoozeUntil.getDate() + 7); // 7 days from now
+    localStorage.setItem('snooze_handover_popup', snoozeUntil.toISOString());
+    setShowHandoverModal(false);
+  };
+
   return (
     <motion.nav
       initial={{ opacity: 0, y: -16 }}
@@ -169,9 +215,14 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
                   <Home className="h-4 w-4" />
                   Home
                 </Button>
-                <Button variant="ghost" onClick={() => navigate("/dashboard")} className="gap-2">
+                <Button variant="ghost" onClick={() => navigate("/dashboard")} className="gap-2 relative">
                   <LayoutDashboard className="h-4 w-4" />
                   Dashboard
+                  {pendingHandoverCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] rounded-full h-5 w-5 flex items-center justify-center border-2 border-background">
+                      {pendingHandoverCount}
+                    </span>
+                  )}
                 </Button>
                 <Button variant="ghost" onClick={() => navigate("/conversations")} className="gap-2 relative">
                   <MessageSquare className="h-4 w-4" />
@@ -192,7 +243,7 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
                     Admin Panel
                   </Button>
                 )}
-                
+
                 <div className="flex items-center gap-2 px-2 border-l border-r border-border dark:border-slate-700">
                   <Switch
                     checked={isDark}
@@ -335,6 +386,45 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
           </>
         )}
       </div>
+      {/* Handover Reminder Popup */}
+      <AlertDialog open={showHandoverModal} onOpenChange={setShowHandoverModal}>
+        <AlertDialogContent className="dark:bg-slate-900 border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-500">
+              <PackageCheck className="h-5 w-5" />
+              Pending Confirmations
+            </AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              You have <strong>{pendingHandoverCount}</strong> item(s) that you've received but haven't confirmed yet.
+              Please confirm them to help donors complete their listings!
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSnooze}
+              className="text-muted-foreground hover:text-white hogver:bg-muted/50 dark:text-state-400 dark:hover:bg-slate-800"
+            >
+              Snooze for 7 days
+            </Button>
+            <div className="flex gap-2">
+              <AlertDialogCancel onClick={() => setShowHandoverModal(false)}>
+                Later
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-primary hover:bg-primary/90"
+                onClick={() => {
+                  setShowHandoverModal(false);
+                  navigate("/dashboard?tab=history");
+                }}
+              >
+                Go to Dashboard
+              </AlertDialogAction>
+            </div>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.nav>
   );
 };
