@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, BookOpen, Package, RefreshCw, Gift, MessageSquare, Settings, User } from "lucide-react";
+import { Plus, Edit, Trash2, BookOpen, Package, RefreshCw, Gift, MessageSquare, Settings, User, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import EditItemDialog from "@/components/EditItemDialog";
 import type { Database } from "@/integrations/supabase/types";
@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ReviewModal } from "@/components/ReviewModal";
 import ComplaintsTab from "@/components/ComplaintsTab";
 import EditProfile from "@/components/EditProfile";
+import { requestNotificationPermission, setupForegroundMessageListener } from "@/utils/notificationSetup";
 
 type Book = Database['public']['Tables']['books']['Row'];
 type Item = Database['public']['Tables']['items']['Row'];
@@ -31,6 +32,7 @@ const Dashboard = () => {
   const [profileLoading, setProfileLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [notiStatus, setNotiStatus] = useState("");
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -50,6 +52,27 @@ const Dashboard = () => {
     fetchUserProfile();
     fetchUserListings();
   }, []);
+
+  useEffect(() => {
+    if (!userProfile?.id) return; // Wait until the profile and user ID are loaded
+
+    const handleNotificationsInit = async () => {
+      // 1. Listen for foreground alerts while app is open
+      setupForegroundMessageListener();
+
+      // 2. Grab the fresh token silently and update Supabase if it changed
+      const freshToken = await requestNotificationPermission(userProfile.id);
+      if (freshToken) {
+        console.log("FCM Token synchronized on boot.");
+        await supabase
+          .from('profiles')
+          .update({ fcm_token: freshToken })
+          .eq('id', userProfile.id);
+      }
+    };
+
+    handleNotificationsInit();
+  }, [userProfile?.id]); // Fires automatically as soon as userProfile is resolved
 
   const fetchUserProfile = async () => {
     try {
@@ -427,10 +450,48 @@ const Dashboard = () => {
     );
   }
 
+  const handleEnableNotifications = async () => {
+    try {
+      setNotiStatus("Requesting...");
+
+      // 1. Get the current logged-in user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 2. Request permission IMMEDIATELY on click (Mobile will allow this!)
+      const fcmToken = await requestNotificationPermission(user.id);
+
+      // 3. Save it to Supabase
+      if (fcmToken) {
+        await supabase
+          .from("profiles")
+          .update({ fcm_token: fcmToken })
+          .eq("id", user.id);
+
+        setNotiStatus("✅ Notifications Enabled!");
+      } else {
+        setNotiStatus("❌ Permission Denied by Browser");
+      }
+    } catch (error: any) {
+      setNotiStatus(`❌ Error: ${error.message}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="container mx-auto px-4 py-8">
+        {/* The physical button that defeats the mobile blocker */}
+        <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold flex items-center gap-2"><Bell size={18} /> Stay Updated</h3>
+            <p className="text-sm text-gray-500">Enable push notifications for new messages.</p>
+            {notiStatus && <p className="text-xs font-mono mt-1 text-blue-600">{notiStatus}</p>}
+          </div>
+          <Button onClick={handleEnableNotifications}>
+            Enable
+          </Button>
+        </div>
 
         {/* Welfare verification banner */}
         {userProfile?.user_type === "welfare" && verificationStatus !== "approved" && (

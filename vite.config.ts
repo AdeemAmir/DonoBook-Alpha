@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [react(),
   VitePWA({
+    strategies: 'injectManifest', // <-- CRITICAL: Stops Vite from overwriting your Firebase code
+    srcDir: 'src',             // <-- CRITICAL: Tells Vite where your custom file lives
+    filename: 'firebase-messaging-sw.js',
     registerType: 'autoUpdate', // Automatically refreshes the app when updates are deployed
     includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
     manifest: {
@@ -56,7 +59,9 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: [
       'minds-hidden-item-rom.trycloudflare.com',
       'reviews-firewall-preview-logo.trycloudflare.com',
-      'tribunal-rapids-which-deaths.trycloudflare.com'
+      'tribunal-rapids-which-deaths.trycloudflare.com',
+      'possibility-routine-instant-interim.trycloudflare.com',
+      'abraham-acre-seminars-skilled.trycloudflare.com',
     ]
   }
 }));

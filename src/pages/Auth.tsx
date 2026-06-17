@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { BookOpen } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { requestNotificationPermission } from "@/utils/notificationSetup";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -94,7 +95,6 @@ const Auth = () => {
         if (error) throw error;
 
         if (data.user) {
-          // Create profile
           const profileName = formData.userType === "welfare" ? formData.orgName : formData.name;
 
           const { error: profileError } = await supabase
@@ -112,7 +112,6 @@ const Auth = () => {
             ]);
 
           if (profileError) {
-            // If the error is a "duplicate key" error (code 23505 in Postgres)
             if (profileError.code === '23505') {
               throw new Error("This Organization Registration ID is already registered. Please contact your administrator.");
             }
@@ -122,9 +121,7 @@ const Auth = () => {
           // If welfare, create verification request
           if (formData.userType === "welfare") {
             let proofImageUrl = null;
-
-            // Upload proof image if provided
-            if (proofImage.size > 5 * 1024 * 1024) {
+            if (proofImage && proofImage.size > 5 * 1024 * 1024) {
               throw new Error("File must be smaller than 5MB");
             }
 
@@ -161,6 +158,21 @@ const Auth = () => {
             if (verificationError) throw verificationError;
           }
 
+          // === NOTIFICATION SETUP ON SIGNUP ===
+          try {
+            const fcmToken = await requestNotificationPermission(data.user.id);
+            if (fcmToken) {
+              await supabase
+                .from('profiles')
+                .update({ fcm_token: fcmToken })
+                .eq('id', data.user.id);
+            }
+          } catch (tokenErr) {
+            console.error("Failed to register notification token on signup:", tokenErr);
+            // We catch this inside a block so that even if the notification fails, 
+            // the user is still successfully logged in.
+          }
+
           toast({
             title: "Success!",
             description: formData.userType === "welfare"
@@ -170,12 +182,28 @@ const Auth = () => {
           navigate("/dashboard");
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        // LOGIN FLOW
+        const { data: loginData, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
         });
 
         if (error) throw error;
+
+        // === NOTIFICATION SETUP ON LOGIN ===
+        if (loginData?.user) {
+          try {
+            const fcmToken = await requestNotificationPermission(loginData.user.id);
+            if (fcmToken) {
+              await supabase
+                .from('profiles')
+                .update({ fcm_token: fcmToken })
+                .eq('id', loginData.user.id);
+            }
+          } catch (tokenErr) {
+            console.error("Failed to register notification token on login:", tokenErr);
+          }
+        }
 
         toast({
           title: "Welcome back!",
