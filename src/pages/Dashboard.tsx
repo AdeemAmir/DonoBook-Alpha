@@ -481,17 +481,40 @@ const Dashboard = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="container mx-auto px-4 py-8">
-        {/* The physical button that defeats the mobile blocker */}
-        <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-between">
-          <div>
-            <h3 className="font-bold flex items-center gap-2"><Bell size={18} /> Stay Updated</h3>
-            <p className="text-sm text-gray-500">Enable push notifications for new messages.</p>
-            {notiStatus && <p className="text-xs font-mono mt-1 text-blue-600">{notiStatus}</p>}
+
+      {/* Push Notifications */}
+      <Card className="mb-8 shadow-card">
+        <CardContent className="py-5 flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Bell size={18} />
+            </div>
+
+            <div>
+              <h3 className="font-heading font-semibold text-foreground">
+                Stay Updated
+              </h3>
+
+              <p className="text-sm text-muted-foreground">
+                Enable push notifications for new messages.
+              </p>
+
+              {notiStatus && (
+                <p className="mt-2 text-xs font-mono text-primary break-all">
+                  {notiStatus}
+                </p>
+              )}
+            </div>
           </div>
-          <Button onClick={handleEnableNotifications}>
+
+          <Button
+            onClick={handleEnableNotifications}
+            className="shrink-0"
+          >
             Enable
           </Button>
-        </div>
+        </CardContent>
+      </Card>
 
         {/* Welfare verification banner */}
         {userProfile?.user_type === "welfare" && verificationStatus !== "approved" && (
