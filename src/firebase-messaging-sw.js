@@ -6,7 +6,7 @@ console.log('Workbox Manifest Injected:', self.__WB_MANIFEST);
 
 // 2. Initialize Firebase
 firebase.initializeApp({
-    apiKey: "AIzaSyB79kP09MnDG2P-FtshDl9ihO7pcu45UbM",
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: "donobook-fyp.firebaseapp.com",
     projectId: "donobook-fyp",
     storageBucket: "donobook-fyp.firebasestorage.app",

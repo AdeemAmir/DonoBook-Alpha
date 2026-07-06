@@ -2,7 +2,7 @@ import { Star } from "lucide-react";
 
 export const UserReputation = ({ reviews }: { reviews: any[] }) => {
   if (!reviews || reviews.length === 0) {
-    return <span className="text-xs italic">New Member (No ratings)</span>;
+    return <span className="text-xs italic">(New Member)</span>;
   }
 
   const totalRating = reviews.reduce((acc, curr) => acc + curr.rating, 0);
@@ -14,9 +14,9 @@ export const UserReputation = ({ reviews }: { reviews: any[] }) => {
         <Star className="h-3 w-3 fill-amber-500 text-amber-500 mr-1" />
         <span className="text-xs font-bold text-amber-700">{average.toFixed(1)}</span>
       </div>
-      <span className="text-[10px] text-muted-foreground">
+      {/* <span className="text-[10px] text-muted-foreground">
         {reviews.length} {reviews.length === 1 ? 'handover' : 'handovers'}
-      </span>
+      </span> */}
     </div>
   );
 };

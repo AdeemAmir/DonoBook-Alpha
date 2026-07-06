@@ -61,18 +61,30 @@ const Dashboard = () => {
       setupForegroundMessageListener();
 
       // 2. Grab the fresh token silently and update Supabase if it changed
-      const freshToken = await requestNotificationPermission(userProfile.id);
-      if (freshToken) {
-        console.log("FCM Token synchronized on boot.");
-        await supabase
-          .from('profiles')
-          .update({ fcm_token: freshToken })
-          .eq('id', userProfile.id);
+      if (Notification.permission === 'granted') {
+        const freshToken = await requestNotificationPermission(userProfile.id);
+        if (freshToken) {
+          await supabase
+            .from('profiles')
+            .update({ fcm_token: freshToken })
+            .eq('id', userProfile.id);
+        }
       }
     };
 
     handleNotificationsInit();
   }, [userProfile?.id]); // Fires automatically as soon as userProfile is resolved
+
+  useEffect(() => {
+    if (profileLoading) return; // wait until the real fetch is confirmed done
+    if (userProfile?.user_type === "user" && !userProfile?.address && activeTab !== "settings") {
+      toast({
+        title: "Profile Incomplete",
+        description: "Please provide your address so you can start exchanging books!",
+      });
+      setActiveTab("settings");
+    }
+  }, [profileLoading, userProfile, activeTab]);
 
   const fetchUserProfile = async () => {
     try {
@@ -442,7 +454,7 @@ const Dashboard = () => {
   if (profileLoading || loading) {
     return (
       <div className="min-h-screen bg-background">
-        <Navbar />
+        <Navbar userProfile={userProfile} />
         <div className="text-center py-12">
           <p className="text-muted-foreground">Loading your inventory...</p>
         </div>
@@ -450,72 +462,10 @@ const Dashboard = () => {
     );
   }
 
-  const handleEnableNotifications = async () => {
-    try {
-      setNotiStatus("Requesting...");
-
-      // 1. Get the current logged-in user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // 2. Request permission IMMEDIATELY on click (Mobile will allow this!)
-      const fcmToken = await requestNotificationPermission(user.id);
-
-      // 3. Save it to Supabase
-      if (fcmToken) {
-        await supabase
-          .from("profiles")
-          .update({ fcm_token: fcmToken })
-          .eq("id", user.id);
-
-        setNotiStatus("✅ Notifications Enabled!");
-      } else {
-        setNotiStatus("❌ Permission Denied by Browser");
-      }
-    } catch (error: any) {
-      setNotiStatus(`❌ Error: ${error.message}`);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+      <Navbar userProfile={userProfile} />
       <div className="container mx-auto px-4 py-8">
-
-      {/* Push Notifications */}
-      <Card className="mb-8 shadow-card">
-        <CardContent className="py-5 flex items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Bell size={18} />
-            </div>
-
-            <div>
-              <h3 className="font-heading font-semibold text-foreground">
-                Stay Updated
-              </h3>
-
-              <p className="text-sm text-muted-foreground">
-                Enable push notifications for new messages.
-              </p>
-
-              {notiStatus && (
-                <p className="mt-2 text-xs font-mono text-primary break-all">
-                  {notiStatus}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <Button
-            onClick={handleEnableNotifications}
-            className="shrink-0"
-          >
-            Enable
-          </Button>
-        </CardContent>
-      </Card>
-
         {/* Welfare verification banner */}
         {userProfile?.user_type === "welfare" && verificationStatus !== "approved" && (
           <Card className="shadow-card mb-8 border-amber-500/50 bg-amber-50/50">

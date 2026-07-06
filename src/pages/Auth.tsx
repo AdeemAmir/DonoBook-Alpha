@@ -31,7 +31,7 @@ const Auth = () => {
   useEffect(() => {
     // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (event === 'SIGNED_IN' && session) {
+      if (session) {
         navigate("/dashboard");
       }
     });
@@ -39,8 +39,10 @@ const Auth = () => {
     // Listen for login/signup events
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        if (event === 'SIGNED_IN' && session && !isSignup) {
-          navigate("/dashboard");
+        if (event === 'SIGNED_IN' && session) {
+          if (session.user.app_metadata.provider === 'google') {
+            navigate("/dashboard");
+          }
         }
       }
     );
@@ -99,17 +101,20 @@ const Auth = () => {
 
           const { error: profileError } = await supabase
             .from("profiles")
-            .insert([
-              {
-                id: data.user.id,
-                name: profileName,
-                user_type: formData.userType,
-                organization_name: formData.userType === "welfare" ? formData.orgName : null,
-                address: formData.address,
-                contact_number: formData.userType === "welfare" ? formData.contactNumber : null,
-                business_id: formData.userType === "welfare" ? formData.businessId : null,
-              },
-            ]);
+            .upsert(
+              [
+                {
+                  id: data.user.id,
+                  name: profileName,
+                  user_type: formData.userType,
+                  organization_name: formData.userType === "welfare" ? formData.orgName : null,
+                  address: formData.address,
+                  contact_number: formData.userType === "welfare" ? formData.contactNumber : null,
+                  business_id: formData.userType === "welfare" ? formData.businessId : null,
+                },
+              ],
+              { onConflict: "id" }
+            );
 
           if (profileError) {
             if (profileError.code === '23505') {

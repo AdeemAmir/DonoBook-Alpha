@@ -8,7 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 
 const KARACHI_AREAS = [
   "Gulshan-e-Iqbal", "DHA / Clifton", "North Nazimabad", "Gulistan-e-Jauhar",
-  "Saddar", "Malir", "Korangi", "Bahria Town", "PECHS", "Federal B Area", "Other"
+  "Saddar", "Malir", "Korangi", "Bahria Town", "PECHS", "Federal B Area",
+  "Nazimabad", "Liyari", "Surjani Town", "Orangi", "Baldia", "Other"
 ];
 
 export const EditProfile = ({ profile, onSave }: { profile: any, onSave: () => void }) => {

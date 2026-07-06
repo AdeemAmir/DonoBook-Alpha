@@ -75,22 +75,10 @@ const Navbar = ({ userProfile: propUserProfile }: { userProfile?: any }) => {
   }, [propUserProfile]);
 
   useEffect(() => {
-    if (profile) {
-      // 2. Check if they are already on the dashboard settings page
-      const isAlreadyOnSettings =
-        location.pathname === "/dashboard" &&
-        location.search.includes("tab=settings");
-
-      // 3. Only run the redirect if their profile is incomplete AND they aren't on settings yet
-      if (profile.user_type === 'user' && !profile.address && !isAlreadyOnSettings) {
-        toast({
-          title: "Profile Incomplete",
-          description: "Please provide your address so you can start exchanging books!",
-        });
-        navigate("/dashboard?tab=settings");
-      }
+    if (propUserProfile) {
+      setProfile(propUserProfile);
     }
-  }, [profile, location.pathname, location.search, navigate]);
+  }, [propUserProfile]);
 
   const fetchUserProfile = async (userId: string) => {
     const { data, error } = await supabase

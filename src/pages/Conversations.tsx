@@ -174,7 +174,7 @@ const Conversations = () => {
           <CardContent className="p-0">
             <div className="border-b p-6 flex items-center justify-between">
               <h1 className="text-2xl font-heading font-bold">Messages</h1>
-              <Button
+              {/* <Button
                 variant="ghost"
                 size="sm"
                 onClick={requestPermission}
@@ -191,7 +191,7 @@ const Conversations = () => {
                     Enable Notifications
                   </>
                 )}
-              </Button>
+              </Button> */}
             </div>
 
             {loading ? (

@@ -10,10 +10,11 @@ import {
   Search, Backpack, BookOpen, BookOpenText, Gift, RefreshCw,
   Package, PencilRuler, ShoppingBag, Loader2, BadgeCheck,
   MapPin, X, SlidersHorizontal, ArrowRight, Sparkles,
-  Users, BookMarked, Shield
+  Users, BookMarked, Shield, Download, Smartphone, Share, PlusSquare
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { UserReputation } from "@/components/UserReputation";
 
 type ListingItem = {
   id: string;
@@ -118,6 +119,11 @@ const Home = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [recommendedCategory, setRecommendedCategory] = useState<string | null>(null);
 
+  // PWA Install State
+  const [showPwaPrompt, setShowPwaPrompt] = useState(false);
+  const [pwaStep, setPwaStep] = useState<'initial' | 'fallback'>('initial');
+  const [isIOS, setIsIOS] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
@@ -132,6 +138,65 @@ const Home = () => {
 
     fetchInitial(lastViewed);
   }, []);
+
+  // ─── PWA INSTALLATION LOGIC ───
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      (window as any).deferredPrompt = e;
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Detect environment
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent) || window.innerWidth < 768;
+    const isAppleMobile = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isAppleMobile);
+    
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    
+    const dismissedForever = localStorage.getItem("pwa_prompt_dismissed");
+    const snoozedUntil = localStorage.getItem("pwa_prompt_snooze");
+    const isSnoozed = snoozedUntil && new Date(snoozedUntil) > new Date();
+
+    if (isMobileDevice && !isStandalone && !dismissedForever && !isSnoozed) {
+      // Delay showing the prompt slightly so it isn't aggressive on first paint
+      const timer = setTimeout(() => setShowPwaPrompt(true), 3500);
+      return () => clearTimeout(timer);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handlePwaInstalledYes = () => {
+    localStorage.setItem('pwa_prompt_dismissed', 'true');
+    setShowPwaPrompt(false);
+  };
+
+  const handlePwaSnooze = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    localStorage.setItem('pwa_prompt_snooze', tomorrow.toISOString());
+    setShowPwaPrompt(false);
+  };
+
+  const handlePwaInstallNo = async () => {
+    const deferredPrompt = (window as any).deferredPrompt;
+    if (deferredPrompt) {
+      // The browser natively supports programmatic install
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        // They accepted the prompt, we don't need to ask again
+        localStorage.setItem('pwa_prompt_dismissed', 'true');
+        setShowPwaPrompt(false);
+      }
+      (window as any).deferredPrompt = null;
+    } else {
+      // If prompt isn't available (iOS, in-app browser, or dismissed standard prompt), show fallback UI
+      setPwaStep('fallback');
+    }
+  };
 
   // Helper to format, sort, and prioritize a single batch of items
   const formatAndSortBatch = (bData: any[], iData: any[], recCat: string | null): ListingItem[] => {
@@ -158,6 +223,7 @@ const Home = () => {
     return combined;
   };
 
+  // Query for book/item owner details
   const fetchInitial = async (recCat: string | null) => {
     try {
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
@@ -261,6 +327,7 @@ const Home = () => {
 
   const activeFilterCount = activeCategories.length + activeTypes.length + (locationQuery ? 1 : 0);
 
+  // Filtered Search 
   const getFilteredListings = () => {
     let filtered = listings;
     if (activeCategories.length > 0) {
@@ -688,6 +755,7 @@ const Home = () => {
                           <BadgeCheck className="h-3.5 w-3.5 text-primary shrink-0" />
                         )}
                         <span className="text-xs text-muted-foreground truncate">{item.owner?.name}</span>
+                        {<UserReputation reviews={item.owner?.received_reviews}/>}
                         {item.owner?.address && (
                           <span className="text-xs text-muted-foreground ml-auto flex items-center gap-0.5 shrink-0">
                             <MapPin className="h-3 w-3" />
@@ -727,6 +795,75 @@ const Home = () => {
           </div>
         )}
       </section>
+
+      {/* ══════════════════════════════════════════
+          PWA INSTALLATION MODAL
+          ══════════════════════════════════════════ */}
+      {showPwaPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 dark:bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm bg-background dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-border dark:border-slate-800 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
+            <button
+              onClick={handlePwaSnooze}
+              className="absolute right-3 top-3 p-2 rounded-full text-muted-foreground hover:bg-muted dark:hover:bg-slate-800 transition-colors"
+              title="Snooze for today"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {pwaStep === 'initial' ? (
+              <div className="p-6 text-center space-y-4">
+                <div className="mx-auto w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-2">
+                  <Smartphone className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-heading font-bold text-foreground">Do you have the DonoBook app?</h3>
+                <p className="text-sm text-muted-foreground pb-2">
+                  Install the DonoBook app to access chats instantly, receive push notifications, and enjoy a faster experience.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <Button onClick={handlePwaInstalledYes} variant="outline" className="w-full">
+                    Yes, I already have it
+                  </Button>
+                  <Button onClick={handlePwaInstallNo} className="w-full bg-primary hover:bg-primary/90 text-white gap-2">
+                    <Download className="h-4 w-4" /> No, I want to install it
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 text-center space-y-4">
+                <div className="mx-auto w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-2">
+                  <Download className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-heading font-bold text-foreground">Install DonoBook</h3>
+                
+                {isIOS ? (
+                  <div className="text-sm text-muted-foreground space-y-3 pb-2 text-left bg-muted/30 dark:bg-slate-800/30 p-4 rounded-lg">
+                    <p>To install the app on iOS:</p>
+                    <ol className="list-decimal pl-4 space-y-2">
+                      <li>Tap the <strong>Share</strong> button <Share className="h-4 w-4 inline text-foreground mx-1" /> at the bottom of your screen.</li>
+                      <li>Scroll down and tap <strong>Add to Home Screen</strong> <PlusSquare className="h-4 w-4 inline text-foreground mx-1" />.</li>
+                      <li>Confirm by tapping <strong>Add</strong> in the top right.</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground space-y-3 pb-2 text-left bg-muted/30 dark:bg-slate-800/30 p-4 rounded-lg">
+                    <p>To install the app on Android:</p>
+                    <ol className="list-decimal pl-4 space-y-2">
+                      <li>Tap the <strong>Browser Menu (⋮)</strong> in the top right.</li>
+                      <li>Select <strong>Install App</strong> or <strong>Add to Home screen</strong>.</li>
+                      <li>If you don't see this option, try selecting <strong>Open in System Browser</strong> first.</li>
+                    </ol>
+                  </div>
+                )}
+                
+                <Button onClick={handlePwaInstalledYes} className="w-full">
+                  Done
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
