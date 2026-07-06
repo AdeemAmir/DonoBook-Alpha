@@ -36,17 +36,7 @@ type ListingItem = {
   };
 };
 
-const PAGE_SIZE = 12;
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0 },
-};
-
-const staggerContainer = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.07 } },
-};
+const PAGE_SIZE = 24;
 
 const CATEGORY_FILTERS = [
   { value: "books", label: "All Books", icon: BookOpen },
@@ -97,21 +87,22 @@ const Home = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Unified listings state prevents layout jumping
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreBooks, setHasMoreBooks] = useState(true);
   const [hasMoreItems, setHasMoreItems] = useState(true);
-  const [booksOffset, setBooksOffset] = useState(0);
-  const [itemsOffset, setItemsOffset] = useState(0);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   
   const [userProfile, setUserProfile] = useState<any>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const listingsSectionRef = useRef<HTMLElement>(null);
+  
+  const booksOffsetRef = useRef(0);
+  const itemsOffsetRef = useRef(0);
+  const fetchingRef = useRef(false);
 
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
@@ -123,6 +114,7 @@ const Home = () => {
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
   const [pwaStep, setPwaStep] = useState<'initial' | 'fallback'>('initial');
   const [isIOS, setIsIOS] = useState(false);
+  const [dontShowFor24Hours, setDontShowFor24Hours] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -147,7 +139,6 @@ const Home = () => {
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // Detect environment
     const userAgent = navigator.userAgent.toLowerCase();
     const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent) || window.innerWidth < 768;
     const isAppleMobile = /iphone|ipad|ipod/.test(userAgent);
@@ -160,7 +151,6 @@ const Home = () => {
     const isSnoozed = snoozedUntil && new Date(snoozedUntil) > new Date();
 
     if (isMobileDevice && !isStandalone && !dismissedForever && !isSnoozed) {
-      // Delay showing the prompt slightly so it isn't aggressive on first paint
       const timer = setTimeout(() => setShowPwaPrompt(true), 3500);
       return () => clearTimeout(timer);
     }
@@ -168,37 +158,35 @@ const Home = () => {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const handlePwaInstalledYes = () => {
-    localStorage.setItem('pwa_prompt_dismissed', 'true');
+  const handleClosePwaPrompt = () => {
+    if (dontShowFor24Hours) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      localStorage.setItem('pwa_prompt_snooze', tomorrow.toISOString());
+    }
     setShowPwaPrompt(false);
   };
 
-  const handlePwaSnooze = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    localStorage.setItem('pwa_prompt_snooze', tomorrow.toISOString());
+  const handlePwaInstalledYes = () => {
+    localStorage.setItem('pwa_prompt_dismissed', 'true');
     setShowPwaPrompt(false);
   };
 
   const handlePwaInstallNo = async () => {
     const deferredPrompt = (window as any).deferredPrompt;
     if (deferredPrompt) {
-      // The browser natively supports programmatic install
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
-        // They accepted the prompt, we don't need to ask again
         localStorage.setItem('pwa_prompt_dismissed', 'true');
         setShowPwaPrompt(false);
       }
       (window as any).deferredPrompt = null;
     } else {
-      // If prompt isn't available (iOS, in-app browser, or dismissed standard prompt), show fallback UI
       setPwaStep('fallback');
     }
   };
 
-  // Helper to format, sort, and prioritize a single batch of items
   const formatAndSortBatch = (bData: any[], iData: any[], recCat: string | null): ListingItem[] => {
     const bList: ListingItem[] = bData.map(book => ({
       id: book.id, slug: book.slug, name: book.title, type: book.type, condition: book.condition,
@@ -223,9 +211,9 @@ const Home = () => {
     return combined;
   };
 
-  // Query for book/item owner details
   const fetchInitial = async (recCat: string | null) => {
     try {
+      fetchingRef.current = true;
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
       const itemSelect = `*, owner:profiles!items_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
 
@@ -239,20 +227,24 @@ const Home = () => {
 
       setListings(formatAndSortBatch(bData, iData, recCat));
       
-      setBooksOffset(bData.length);
-      setItemsOffset(iData.length);
+      booksOffsetRef.current = bData.length;
+      itemsOffsetRef.current = iData.length;
       setHasMoreBooks(bData.length === PAGE_SIZE);
       setHasMoreItems(iData.length === PAGE_SIZE);
     } catch (error) {
       console.error("Error fetching listings:", error);
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
     }
   };
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || (!hasMoreBooks && !hasMoreItems)) return;
+    if (fetchingRef.current || (!hasMoreBooks && !hasMoreItems)) return;
+    
+    fetchingRef.current = true;
     setLoadingMore(true);
+    
     try {
       const bookSelect = `*, owner:profiles!books_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
       const itemSelect = `*, owner:profiles!items_owner_id_fkey(name, verified, address, received_reviews:reviews!reviewee_id(rating))`;
@@ -261,23 +253,24 @@ const Home = () => {
       let newItems: any[] = [];
 
       if (hasMoreBooks) {
+        const currentOffset = booksOffsetRef.current;
         const { data } = await supabase.from("books").select(bookSelect)
-          .order("created_at", { ascending: false }).range(booksOffset, booksOffset + PAGE_SIZE - 1).eq('is_available', true);
+          .order("created_at", { ascending: false }).range(currentOffset, currentOffset + PAGE_SIZE - 1).eq('is_available', true);
         newBooks = data || [];
-        setBooksOffset(prev => prev + newBooks.length);
+        booksOffsetRef.current += newBooks.length;
         if (newBooks.length < PAGE_SIZE) setHasMoreBooks(false);
       }
       if (hasMoreItems) {
+        const currentOffset = itemsOffsetRef.current;
         const { data } = await supabase.from("items").select(itemSelect)
-          .order("created_at", { ascending: false }).range(itemsOffset, itemsOffset + PAGE_SIZE - 1).eq('is_available', true);
+          .order("created_at", { ascending: false }).range(currentOffset, currentOffset + PAGE_SIZE - 1).eq('is_available', true);
         newItems = data || [];
-        setItemsOffset(prev => prev + newItems.length);
+        itemsOffsetRef.current += newItems.length;
         if (newItems.length < PAGE_SIZE) setHasMoreItems(false);
       }
 
       const batch = formatAndSortBatch(newBooks, newItems, recommendedCategory);
       
-      // Deduplicate before appending to prevent React key errors / CSS Grid breaking
       setListings(prev => {
         const existingIds = new Set(prev.map(i => i.id));
         const uniqueNew = batch.filter(i => !existingIds.has(i.id));
@@ -287,9 +280,10 @@ const Home = () => {
     } catch (error) {
       console.error("Error loading more:", error);
     } finally {
+      fetchingRef.current = false;
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMoreBooks, hasMoreItems, booksOffset, itemsOffset, recommendedCategory]);
+  }, [hasMoreBooks, hasMoreItems, recommendedCategory]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -321,13 +315,11 @@ const Home = () => {
   const clearRecommendation = () => {
     setRecommendedCategory(null);
     localStorage.removeItem("donobook_last_category");
-    // Re-sort the current state purely by date so the recommendation bubble naturally vanishes
     setListings(prev => [...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
   };
 
   const activeFilterCount = activeCategories.length + activeTypes.length + (locationQuery ? 1 : 0);
 
-  // Filtered Search 
   const getFilteredListings = () => {
     let filtered = listings;
     if (activeCategories.length > 0) {
@@ -409,9 +401,6 @@ const Home = () => {
     <div className="min-h-screen bg-background transition-colors">
       <Navbar />
 
-      {/* ══════════════════════════════════════════
-          GUEST LANDING — shown only when not logged in
-          ══════════════════════════════════════════ */}
       {isLoggedIn === false && (
         <>
           <section className="relative overflow-hidden">
@@ -419,32 +408,32 @@ const Home = () => {
             <div className="relative container mx-auto px-4 py-20 sm:py-15 text-center">
               <motion.div
                 className="max-w-5xl mx-auto space-y-6"
-                initial="hidden" animate="visible" variants={staggerContainer}
+                initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
               >
-                <motion.h1 variants={fadeUp} transition={{ duration: 0.6 }} className="text-4xl sm:text-6xl font-heading font-bold leading-tight">
+                <h1 className="text-4xl sm:text-6xl font-heading font-bold leading-tight">
                   <span className="gradient-text">Share & Exchange</span>
                   <br />Build Futures.
-                </motion.h1>
-                <motion.p variants={fadeUp} transition={{ duration: 0.6, delay: 0.1 }} className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
+                </h1>
+                <p className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
                   Beyond just transactions - Donobook is an ecosystem for school essentials. <br />
                   Be it a sturdy backpack, or much-needed textbooks students rely on, <br />we connect students so valuable resources never go to waste. <br />
                   Give what you can. Feed the thirst for knowledge.
-                </motion.p>
-                <motion.div variants={fadeUp} transition={{ duration: 0.5, delay: 0.2 }} className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
                   <Button size="lg" onClick={() => navigate("/auth?mode=signup")} className="bg-primary hover:bg-primary-hover shadow-glow gap-2 h-12 px-8 text-base font-semibold btn-glow text-white">
                     Get Started Free <ArrowRight className="h-4 w-4" />
                   </Button>
                   <Button size="lg" variant="outline" onClick={() => listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })} className="h-12 px-8 text-base">
                     Browse Listings
                   </Button>
-                </motion.div>
+                </div>
               </motion.div>
             </div>
           </section>
 
           <section className="container mx-auto px-4 py-16 text-center">
             <div className="relative container text-center">
-              <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>
+              <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 mb-4 dark:text-primary-foreground">
                   <Sparkles className="h-3.5 w-3.5" /> Built for a better Future
                 </span>
@@ -455,12 +444,15 @@ const Home = () => {
               <h2 className="text-2xl sm:text-3xl font-heading font-bold mb-3">Why DonoBook?</h2>
               <p className="text-muted-foreground max-w-xl mx-auto">Everything you need to share and find school essentials — in one place.</p>
             </div>
-            <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
-              initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer}
-            >
-              {FEATURES.map((f) => (
-                <motion.div key={f.title} variants={fadeUp} transition={{ duration: 0.5 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {FEATURES.map((f, i) => (
+                <motion.div 
+                  key={f.title} 
+                  initial={{ opacity: 0, y: 24 }} 
+                  whileInView={{ opacity: 1, y: 0 }} 
+                  viewport={{ once: true }} 
+                  transition={{ delay: i * 0.1, duration: 0.5 }}
+                >
                   <Card className="h-full hover:shadow-soft transition-smooth border-border hover:-translate-y-1">
                     <CardHeader>
                       <div className="flex justify-center mb-4">
@@ -474,7 +466,7 @@ const Home = () => {
                   </Card>
                 </motion.div>
               ))}
-            </motion.div>
+            </div>
           </section>
 
           <section className="container mx-auto px-4 pb-8">
@@ -482,17 +474,20 @@ const Home = () => {
               <h2 className="text-2xl font-heading font-bold mb-2">What's Available</h2>
               <p className="text-muted-foreground text-sm">Browse by category to find exactly what you need</p>
             </div>
-            <motion.div
-              className="grid grid-cols-2 sm:grid-cols-4 gap-4"
-              initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer}
-            >
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { icon: BookOpenText, title: "Textbooks", desc: "Class 1-12 curriculum", color: "text-primary" },
                 { icon: Backpack, title: "School Bags", desc: "Backpacks & bags", color: "text-secondary" },
                 { icon: PencilRuler, title: "Stationery", desc: "Pencils, pens & sets", color: "text-accent" },
                 { icon: ShoppingBag, title: "Lunchboxes", desc: "Tiffins & bottles", color: "text-primary" },
-              ].map((cat) => (
-                <motion.div key={cat.title} variants={fadeUp} transition={{ duration: 0.4 }}>
+              ].map((cat, i) => (
+                <motion.div 
+                  key={cat.title} 
+                  initial={{ opacity: 0, y: 24 }} 
+                  whileInView={{ opacity: 1, y: 0 }} 
+                  viewport={{ once: true }} 
+                  transition={{ delay: i * 0.1, duration: 0.4 }}
+                >
                   <Card
                     className="hover:shadow-soft hover:-translate-y-1 transition-smooth cursor-pointer border-border"
                     onClick={() => listingsSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
@@ -505,14 +500,11 @@ const Home = () => {
                   </Card>
                 </motion.div>
               ))}
-            </motion.div>
+            </div>
           </section>
         </>
       )}
 
-      {/* ══════════════════════════════════════════
-          LOGGED-IN HERO — compact, product-first
-          ══════════════════════════════════════════ */}
       {isLoggedIn === true && (
         <section className="container mx-auto px-4 py-8">
           <motion.div
@@ -541,9 +533,6 @@ const Home = () => {
         </section>
       )}
 
-      {/* ══════════════════════════════════════════
-          SEARCH BAR (always visible)
-          ══════════════════════════════════════════ */}
       {isLoggedIn !== null && (
         <div className="container mx-auto px-4 pb-4">
           <div className="relative max-w-2xl mx-auto">
@@ -568,9 +557,6 @@ const Home = () => {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          LISTINGS SECTION
-          ══════════════════════════════════════════ */}
       <section ref={listingsSectionRef} className="container mx-auto px-4 pb-16 scroll-mt-20">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -594,7 +580,6 @@ const Home = () => {
           </Button>
         </div>
 
-        {/* Filter Panel */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
@@ -675,7 +660,6 @@ const Home = () => {
           )}
         </AnimatePresence>
 
-        {/* Results */}
         {loading ? (
           <div className="text-center py-20 flex flex-col items-center">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
@@ -707,22 +691,31 @@ const Home = () => {
                 <span>Personalized based on your browsing | <button onClick={clearRecommendation} className="text-primary hover:text-primary-hover underline underline-offset-2">show all</button></span>
               </div>
             )}
-            <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
-              initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer} key={filterKey}
-            >
+            
+            {/* Parent container no longer holds the variants to prevent newly appended children from staying hidden */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" key={filterKey}>
               {filteredListings.map((item) => (
-                <motion.div key={`${item.itemType}-${item.id}`} variants={fadeUp} transition={{ duration: 0.35 }}>
+                <motion.div 
+                  key={`${item.itemType}-${item.id}`} 
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "50px" }}
+                  transition={{ duration: 0.4 }}
+                >
                   <Card
                     className="shadow-sm hover:shadow-soft transition-smooth cursor-pointer group h-full flex flex-col border-border hover:-translate-y-1"
                     onClick={() => handleItemClick(item)}
                   >
-                    <div className="relative overflow-hidden rounded-t-lg">
+                    <div className="relative overflow-hidden rounded-t-lg bg-muted/20">
                       <img
                         src={getThumbnail(item.image_url)}
                         alt={item.name}
                         loading="lazy"
-                        className="w-full h-44 object-cover bg-muted/20 group-hover:scale-105 transition-transform duration-500"
+                        onError={(e) => {
+                          e.currentTarget.src = "/placeholder.svg";
+                          e.currentTarget.onerror = null;
+                        }}
+                        className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     </div>
                     <CardContent className="p-4 flex-1 flex flex-col">
@@ -767,10 +760,10 @@ const Home = () => {
                   </Card>
                 </motion.div>
               ))}
-            </motion.div>
+            </div>
 
             {/* Load more sentinel */}
-            <div ref={sentinelRef} className="h-8 mt-8 flex items-center justify-center">
+            <div ref={sentinelRef} className="h-10 mt-8 flex items-center justify-center">
               {loadingMore && <Loader2 className="h-6 w-6 animate-spin text-primary" />}
               {!hasMore && filteredListings.length > 0 && (
                 <p className="text-sm text-muted-foreground">All listings loaded</p>
@@ -803,9 +796,9 @@ const Home = () => {
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 dark:bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="relative w-full max-w-sm bg-background dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-border dark:border-slate-800 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
             <button
-              onClick={handlePwaSnooze}
-              className="absolute right-3 top-3 p-2 rounded-full text-muted-foreground hover:bg-muted dark:hover:bg-slate-800 transition-colors"
-              title="Snooze for today"
+              onClick={handleClosePwaPrompt}
+              className="absolute right-3 top-3 p-2 rounded-full text-muted-foreground hover:bg-muted dark:hover:bg-slate-800 transition-colors z-10"
+              title="Close"
             >
               <X className="h-4 w-4" />
             </button>
@@ -827,6 +820,15 @@ const Home = () => {
                     <Download className="h-4 w-4" /> No, I want to install it
                   </Button>
                 </div>
+                <label className="flex items-center justify-center gap-2 text-sm text-muted-foreground dark:text-slate-400 cursor-pointer select-none pt-2">
+                  <input
+                    type="checkbox"
+                    checked={dontShowFor24Hours}
+                    onChange={(e) => setDontShowFor24Hours(e.target.checked)}
+                    className="h-4 w-4 rounded border-border dark:border-slate-700 dark:bg-slate-800 text-primary focus:ring-primary cursor-pointer"
+                  />
+                  Snooze for 24 hours
+                </label>
               </div>
             ) : (
               <div className="p-6 text-center space-y-4">
